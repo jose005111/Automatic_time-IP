@@ -24,10 +24,10 @@ export default function Login({
 }: Props) {
     return (
         <AuthLayout
-            title="Log in to your account"
-            description="Enter your email and password below to log in"
+            title="Aceder ao Sistema"
+            description="Introduza o seu email e senha para entrar na conta"
         >
-            <Head title="Log in" />
+            <Head title="Entrar" />
 
             <Form
                 {...store.form()}
@@ -38,7 +38,7 @@ export default function Login({
                     <>
                         <div className="grid gap-6">
                             <div className="grid gap-2">
-                                <Label htmlFor="email">Email address</Label>
+                                <Label htmlFor="email">Endereço de Email</Label>
                                 <Input
                                     id="email"
                                     type="email"
@@ -47,21 +47,21 @@ export default function Login({
                                     autoFocus
                                     tabIndex={1}
                                     autoComplete="email"
-                                    placeholder="email@example.com"
+                                    placeholder="exemplo@ukb.edu.ao"
                                 />
                                 <InputError message={errors.email} />
                             </div>
 
                             <div className="grid gap-2">
                                 <div className="flex items-center">
-                                    <Label htmlFor="password">Password</Label>
+                                    <Label htmlFor="password">Senha</Label>
                                     {canResetPassword && (
                                         <TextLink
                                             href={request()}
                                             className="ml-auto text-sm"
                                             tabIndex={5}
                                         >
-                                            Forgot password?
+                                            Esqueceu a senha?
                                         </TextLink>
                                     )}
                                 </div>
@@ -72,7 +72,7 @@ export default function Login({
                                     required
                                     tabIndex={2}
                                     autoComplete="current-password"
-                                    placeholder="Password"
+                                    placeholder="••••••••"
                                 />
                                 <InputError message={errors.password} />
                             </div>
@@ -83,26 +83,31 @@ export default function Login({
                                     name="remember"
                                     tabIndex={3}
                                 />
-                                <Label htmlFor="remember">Remember me</Label>
+                                <Label htmlFor="remember">Lembrar-me</Label>
                             </div>
 
                             <Button
                                 type="submit"
-                                className="mt-4 w-full"
+                                className="mt-4 w-full bg-blue-600 text-white hover:bg-blue-700"
                                 tabIndex={4}
                                 disabled={processing}
                                 data-test="login-button"
                             >
                                 {processing && <Spinner />}
-                                Log in
+                                Entrar no Painel
                             </Button>
                         </div>
 
+                        {/* O SISTEMA VAI ESCONDER ISTO SE CANREGISTER FOR FALSE */}
                         {canRegister && (
                             <div className="text-center text-sm text-muted-foreground">
-                                Don't have an account?{' '}
-                                <TextLink href={register()} tabIndex={5}>
-                                    Sign up
+                                Primeiro acesso ao sistema?{' '}
+                                <TextLink
+                                    href={register()}
+                                    tabIndex={5}
+                                    className="font-medium text-blue-600 hover:text-blue-700"
+                                >
+                                    Criar Conta
                                 </TextLink>
                             </div>
                         )}

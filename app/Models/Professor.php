@@ -8,7 +8,12 @@ class Professor extends Model
 {
     protected $table = 'professores';
     
-    protected $fillable = ['nome', 'email'];
+    protected $fillable = [
+        'nome', 
+        'email', 
+        'categoria',
+        'especialidade',
+        'carga_horaria_max','departamento_id'];
 
   public function disciplinasQueEnsina()
 {
@@ -26,4 +31,6 @@ class Professor extends Model
     {
         return $this->hasMany(TPD::class);
     }
+
+    
 }

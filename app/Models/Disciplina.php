@@ -14,5 +14,10 @@ class Disciplina extends Model
         return $this->belongsToMany(Professor::class, 'disciplina_professores');
     }
 
+    public function alocacoes() // As demandas de aula (TPD)
+    {
+        return $this->hasMany(TPD::class, 'disciplina_id');
+    }
+
     
 }

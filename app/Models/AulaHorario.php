@@ -31,6 +31,7 @@ class AulaHorario extends Model
                 // Copiamos os IDs para as colunas de validação (Desnormalização)
                 $aula->turma_id = $alocacao->turma_id;
                 $aula->professor_id = $alocacao->professor_id;
+                $aula->disciplina_id = $alocacao->disciplina_id;
             }
         });
     }
@@ -50,6 +51,10 @@ class AulaHorario extends Model
     public function professor()
     {
         return $this->belongsTo(Professor::class);
+    }
+    public function disciplina()
+    {
+        return $this->belongsTo(Disciplina::class);
     }
 
     public function sala()

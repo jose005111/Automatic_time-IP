@@ -4,16 +4,17 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     Edit,
     Eye,
-    ListFilter,
     PlusCircle,
-    Printer,
     Search,
     Trash2Icon,
     X,
     Plus,
-    Trash,
+    BookOpen,
+    User,
+    Clock,
+    Calendar,
 } from 'lucide-react';
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,161 +25,182 @@ import {
     SelectValue,
     SelectContent,
     SelectItem,
-} from '@/components/ui/select'; // seu Radix Select
-
-import {
-    Sheet,
-    SheetContent,
-    // SheetHeader,
-    SheetTitle,
-} from '@/components/ui/sheet';
-
+} from '@/components/ui/select';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import AppLayout from '@/layouts/app-layout';
-
 import type { BreadcrumbItem } from '@/types';
+import { Badge } from '@/components/ui/badge';
 
-const breadcrumbs: BreadcrumbItem[] = [
-    {
-        title: 'Turmas',
-        href: '/turma',
-    },
-];
+const breadcrumbs: BreadcrumbItem[] = [{ title: 'Turmas', href: '/turmas' }];
+
+// Mapeamentos para exibição
+const regimeMap = {
+    0: 'Regular',
+    1: 'Pós-Laboral',
+};
+
+const turnoMap = {
+    0: 'Manhã',
+    1: 'Tarde',
+    2: 'Noite',
+};
 
 export default function TurmaIndex({
-    turmas = [],
-    salas,
-    cursos,
-    disciplinas,
-    professores,
+    turmas = { data: [], links: [] },
+    salas = [],
+    cursos = [],
+    periodosLectivos = [],
+    disciplinas = [],
+    professores = [],
     search = '',
 }: any) {
     const [open, setOpen] = useState(false);
     const [viewOpen, setViewOpen] = useState(false);
-    const [editOpen, setEditOpen] = useState(false);
     const [deleteOpen, setDeleteOpen] = useState(false);
-    const [selectedTurma, setSelectedTurma] = useState<any>(
-        turmas.data[0] || null,
-    );
-
+    const [selectedTurma, setSelectedTurma] = useState<any>(null);
+    const [isEditing, setIsEditing] = useState(false);
     const [query, setQuery] = useState(search || '');
 
-    const { data, setData, post, processing, errors, reset } = useForm({
-        id: '',
+    const { data, setData, post, put, processing, errors, reset } = useForm({
         nome: '',
-        periodo: '',
+        regime: '',
         turno: '',
-        ano: '',
+        periodos_lectivo_id: '',
         sala_id: '',
         curso_id: '',
-        atribuicoes: [
+        alocacoes: [
             { disciplina_id: '', professor_id: '', tempos_semanais: '2' },
         ],
     });
 
-    //Metodos CRUD - podem ser aprimorados para tratar erros, loading, etc.
-    function submit(e: React.FormEvent) {
-        e.preventDefault();
-        console.log(data);
-        post('/turmas', {
-            onSuccess: () => {
-                reset();
-                setOpen(false);
-            },
+    const handleCreate = () => {
+        setIsEditing(false);
+        reset();
+        setOpen(true);
+    };
+
+    const handleEdit = (turma: any) => {
+        setIsEditing(true);
+        setSelectedTurma(turma);
+
+        setData({
+            nome: turma.nome,
+            regime: turma.regime?.toString() || '',
+            turno: turma.turno?.toString() || '',
+            periodos_lectivo_id: turma.periodos_lectivo_id?.toString() || '',
+            sala_id: turma.sala_id?.toString() || '',
+            curso_id: turma.curso_id?.toString() || '',
+            alocacoes:
+                turma.alocacoes?.length > 0
+                    ? turma.alocacoes.map((a: any) => ({
+                          disciplina_id: a.disciplina_id?.toString() || '',
+                          professor_id: a.professor_id?.toString() || '',
+                          tempos_semanais: a.tempos_semanais?.toString() || '2',
+                      }))
+                    : [
+                          {
+                              disciplina_id: '',
+                              professor_id: '',
+                              tempos_semanais: '2',
+                          },
+                      ],
         });
-    }
+        setOpen(true);
+    };
 
-    function update(e: React.FormEvent) {
+    const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        if (isEditing && selectedTurma) {
+            put(`/turmas/${selectedTurma.id}`, {
+                onSuccess: () => {
+                    setOpen(false);
+                    reset();
+                },
+            });
+        } else {
+            post('/turmas', {
+                onSuccess: () => {
+                    setOpen(false);
+                    reset();
+                },
+            });
+        }
+    };
 
-        post(`/turmas/${selectedTurma?.id}`, {
-            method: 'put',
-            onSuccess: () => {
-                setEditOpen(false);
-            },
-        });
-    }
-
-    function destroy() {
+    const destroy = () => {
         router.delete(`/turmas/${selectedTurma?.id}`, {
             preserveScroll: true,
             onSuccess: () => setDeleteOpen(false),
         });
-    }
+    };
 
-    // Pesquisa simples - pode ser aprimorada para debounce, etc.
-    function handleSearch() {
+    const handleSearch = () => {
         router.get(
             '/turmas',
             { search: query },
             { preserveState: true, replace: true },
         );
-    }
+    };
 
-    // Adiciona nova linha de disciplina no formulário
     const addAtribuicao = () => {
-        setData('atribuicoes', [
-            ...data.atribuicoes,
+        setData('alocacoes', [
+            ...data.alocacoes,
             { disciplina_id: '', professor_id: '', tempos_semanais: '2' },
         ]);
     };
 
-    // Remove uma linha
     const removeAtribuicao = (index: number) => {
-        const list = [...data.atribuicoes];
+        const list = [...data.alocacoes];
         list.splice(index, 1);
-        setData('atribuicoes', list);
+        setData('alocacoes', list);
     };
 
-    // Atualiza campo específico da atribuição
     const updateAtribuicao = (index: number, field: string, value: string) => {
-        const list = [...data.atribuicoes];
+        const list = [...data.alocacoes];
         (list[index] as any)[field] = value;
-        setData('atribuicoes', list);
+
+        if (field === 'disciplina_id') {
+            (list[index] as any)['professor_id'] = '';
+        }
+
+        setData('alocacoes', list);
+    };
+
+    const getProfessoresDaDisciplina = (disciplinaId: string) => {
+        if (!disciplinaId) return [];
+        return professores.filter((prof: any) =>
+            prof.disciplinas_que_ensina?.some(
+                (d: any) => d.id.toString() === disciplinaId,
+            ),
+        );
     };
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="turmas" />
+            <Head title="Turmas" />
             <div className="flex flex-col gap-4 rounded-xl bg-background p-6 shadow-sm">
-                {/* Header */}
+                {/* Header Actions */}
                 <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                        <Button
-                            onClick={() => {
-                                reset();
-                                setOpen(true);
-                            }}
-                        >
-                            <PlusCircle className="h-4 w-4" /> Adicionar
-                        </Button>
-                        {/* <Button onClick={() => setOpen(true)}>
-                            <ListFilter className="h-4 w-4" /> Filtrar
-                        </Button>
-
-                        <a href={`/salas/print`} target="_blank">
-                            <Button>
-                                <Printer className="h-4 w-4" />
-                                Imprimir PDF
-                            </Button>
-                        </a> */}
-                    </div>
+                    <Button onClick={handleCreate}>
+                        <PlusCircle className="mr-2 h-4 w-4" /> Adicionar Turma
+                    </Button>
                     <div className="flex items-center space-x-2">
                         <Input
                             type="text"
-                            placeholder="Pesquisar..."
+                            placeholder="Pesquisar por nome da turma..."
                             className="max-w-xs"
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') handleSearch();
-                            }}
+                            onKeyDown={(e) =>
+                                e.key === 'Enter' && handleSearch()
+                            }
                         />
                         {query ? (
                             <Button
                                 variant="secondary"
                                 onClick={() => router.get('/turmas')}
                             >
-                                <X />
+                                <X className="h-4 w-4" />
                             </Button>
                         ) : (
                             <Button variant="outline" onClick={handleSearch}>
@@ -191,341 +213,321 @@ export default function TurmaIndex({
                 {/* Tabela */}
                 <div className="max-h-[calc(100vh-260px)] overflow-x-auto overflow-y-auto rounded-md border">
                     <table className="w-full text-sm">
-                        <thead>
+                        <thead className="sticky top-0 bg-muted/50">
                             <tr className="border-b text-left">
-                                <th className="p-3">nome</th>
-                                <th className="p-3">periodo</th>
-                                <th className="p-3">ano</th>
-                                <th className="p-3">curso</th>
-                                <th className="p-3 text-center">Acções</th>
+                                <th className="p-3">Nome da Turma</th>
+                                <th className="p-3">Curso</th>
+                                <th className="p-3">Período Lectivo</th>
+                                <th className="p-3">Regime/Turno</th>
+                                <th className="p-3 text-center">Ações</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {turmas.data.length === 0 ? (
+                            {turmas.data?.length === 0 ? (
                                 <tr>
                                     <td
-                                        colSpan={6}
+                                        colSpan={5}
                                         className="p-6 text-center text-muted-foreground"
                                     >
                                         Nenhuma turma encontrada.
                                     </td>
                                 </tr>
                             ) : (
-                                turmas.data.map((turma: any, index: number) => (
-                                    // <tr key={turma.id} className="border-b">
-                                    <motion.tr
-                                        key={turma.id}
-                                        className="border-b"
-                                        initial={{ opacity: 0, x: -10 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        transition={{ delay: index * 0.05 }} // Efeito cascata subtil
-                                    >
-                                        <td className="p-3">{turma.nome}</td>
-
-                                        <td className="p-3">{turma.periodo}</td>
-                                        <td className="p-3">
-                                            {turma.ano}º Ano
-                                        </td>
-                                        <td className="p-3">
-                                            {turma.curso?.nome}
-                                        </td>
-                                        <td className="p-3 text-right">
-                                            <div className="flex items-center justify-center space-x-2">
-                                                <Button
-                                                    size="sm"
-                                                    onClick={() => {
-                                                        setSelectedTurma(turma);
-                                                        setViewOpen(true);
-                                                    }}
-                                                    className="border-none bg-cyan-500 hover:bg-cyan-600"
-                                                >
-                                                    <Eye className="h-4 w-4 text-background" />
-                                                </Button>
-
-                                                <Button
-                                                    size="sm"
-                                                    onClick={() => {
-                                                        setSelectedTurma(turma);
-                                                        setData({
-                                                            id: turma.id,
-                                                            nome: turma.nome,
-                                                            periodo:
-                                                                turma.periodo,
-                                                            turno: turma.turno,
-                                                            ano: turma.ano,
-                                                            sala_id:
-                                                                turma.sala_id,
-                                                            curso_id:
-                                                                turma.curso_id,
-                                                        });
-                                                        setEditOpen(true);
-                                                    }}
-                                                    className="border-none bg-yellow-500 hover:bg-yellow-600"
-                                                >
-                                                    <Edit className="h-4 w-4 text-background" />
-                                                </Button>
-
-                                                <Button
-                                                    size="sm"
-                                                    onClick={() => {
-                                                        setSelectedTurma(turma);
-                                                        setDeleteOpen(true);
-                                                    }}
-                                                    className="border-none bg-rose-500 hover:bg-rose-600"
-                                                >
-                                                    <Trash2Icon className="h-4 w-4 text-background" />
-                                                </Button>
-                                            </div>
-                                        </td>
-                                    </motion.tr>
-                                ))
+                                turmas.data?.map(
+                                    (turma: any, index: number) => (
+                                        <motion.tr
+                                            key={turma.id}
+                                            className="border-b hover:bg-muted/30"
+                                            initial={{ opacity: 0, x: -10 }}
+                                            animate={{ opacity: 1, x: 0 }}
+                                            transition={{ delay: index * 0.05 }}
+                                        >
+                                            <td className="p-3 font-medium">
+                                                {turma.nome}
+                                            </td>
+                                            <td className="p-3">
+                                                {turma.curso?.nome}
+                                            </td>
+                                            <td className="p-3">
+                                                <Badge variant="outline">
+                                                    {turma.periodo_lectivo?.ano}{' '}
+                                                    -{' '}
+                                                    {
+                                                        turma.periodo_lectivo
+                                                            ?.semestre
+                                                    }
+                                                    º Semestre
+                                                </Badge>
+                                            </td>
+                                            <td className="p-3">
+                                                <div className="flex gap-1">
+                                                    <Badge variant="secondary">
+                                                        {
+                                                            regimeMap[
+                                                                turma.regime as keyof typeof regimeMap
+                                                            ]
+                                                        }
+                                                    </Badge>
+                                                    <Badge variant="secondary">
+                                                        {
+                                                            turnoMap[
+                                                                turma.turno as keyof typeof turnoMap
+                                                            ]
+                                                        }
+                                                    </Badge>
+                                                </div>
+                                            </td>
+                                            <td className="p-3 text-right">
+                                                <div className="flex items-center justify-center space-x-2">
+                                                    <Button
+                                                        size="icon"
+                                                        variant="ghost"
+                                                        className="bg-cyan-500 text-white hover:bg-cyan-600"
+                                                        onClick={() => {
+                                                            setSelectedTurma(
+                                                                turma,
+                                                            );
+                                                            setViewOpen(true);
+                                                        }}
+                                                    >
+                                                        <Eye className="h-4 w-4" />
+                                                    </Button>
+                                                    <Button
+                                                        size="icon"
+                                                        variant="ghost"
+                                                        className="bg-yellow-500 text-white hover:bg-yellow-600"
+                                                        onClick={() =>
+                                                            handleEdit(turma)
+                                                        }
+                                                    >
+                                                        <Edit className="h-4 w-4" />
+                                                    </Button>
+                                                    <Button
+                                                        size="icon"
+                                                        variant="ghost"
+                                                        className="bg-rose-500 text-white hover:bg-rose-600"
+                                                        onClick={() => {
+                                                            setSelectedTurma(
+                                                                turma,
+                                                            );
+                                                            setDeleteOpen(true);
+                                                        }}
+                                                    >
+                                                        <Trash2Icon className="h-4 w-4" />
+                                                    </Button>
+                                                </div>
+                                            </td>
+                                        </motion.tr>
+                                    ),
+                                )
                             )}
                         </tbody>
                     </table>
                 </div>
-                {turmas.data.length > 0 && (
-                    <div className="mt-4 flex flex-col items-center justify-between gap-3 border-t pt-4 md:flex-row">
-                        {/* Informação */}
-                        <div className="text-sm text-muted-foreground">
-                            Mostrando{' '}
-                            <span className="font-medium">{turmas.from}</span> a{' '}
-                            <span className="font-medium">{turmas.to}</span> de{' '}
-                            <span className="font-medium">{turmas.total}</span>{' '}
-                            registros
-                        </div>
-
-                        {/* Navegação */}
-                        <div className="flex items-center gap-1">
-                            {turmas.links.map((link: any, index: number) => (
-                                <button
-                                    key={index}
-                                    disabled={!link.url}
-                                    onClick={() =>
-                                        link.url &&
-                                        router.visit(link.url, {
-                                            preserveScroll: true,
-                                        })
-                                    }
-                                    dangerouslySetInnerHTML={{
-                                        __html: link.label,
-                                    }}
-                                    className={clsx(
-                                        'rounded-md border px-3 py-1 text-sm transition',
-                                        link.active
-                                            ? 'bg-primary text-background'
-                                            : 'bg-background hover:bg-muted',
-                                        !link.url &&
-                                            'cursor-not-allowed opacity-50',
-                                    )}
-                                />
-                            ))}
-                        </div>
-                    </div>
-                )}
             </div>
-            {/* //Modal de criação - pode ser reutilizado para edição com ajustes */}
+
+            {/* MODAL DE CRIAÇÃO/EDIÇÃO */}
             <Sheet open={open} onOpenChange={setOpen}>
                 <SheetContent
                     side="right"
-                    className="flex h-full w-full flex-col border-l bg-background p-0 sm:max-w-md"
+                    className="flex h-full w-full flex-col border-l bg-background p-0 sm:max-w-2xl"
                 >
-                    {/* HEADER */}
                     <div className="border-b px-6 py-4">
                         <SheetTitle className="text-lg font-semibold">
-                            Nova Turma
+                            {isEditing ? 'Editar Turma' : 'Nova Turma'}
                         </SheetTitle>
                         <p className="text-sm text-muted-foreground">
-                            Preencha as informações da Turma
+                            Configure a turma, período lectivo e atribua os
+                            docentes às disciplinas.
                         </p>
                     </div>
 
-                    {/* BODY (scrollável) */}
                     <div className="flex-1 overflow-y-auto px-6 py-6">
                         <form
-                            id="Turma-form"
-                            onSubmit={submit}
+                            id="turma-form"
+                            onSubmit={handleSubmit}
                             className="space-y-5"
                         >
-                            <div className="space-y-2">
-                                <Label htmlFor="nome">Nome</Label>
-                                <Input
-                                    id="nome"
-                                    value={data.nome}
-                                    onChange={(e) =>
-                                        setData('nome', e.target.value)
-                                    }
-                                />
-                                {errors.nome && (
-                                    <p className="text-xs text-destructive">
-                                        {errors.nome}
-                                    </p>
-                                )}
+                            {/* DADOS BÁSICOS */}
+                            <div className="space-y-4">
+                                <div className="space-y-2">
+                                    <Label>Nome da Turma</Label>
+                                    <Input
+                                        placeholder="Ex: Turma A, Turma B, etc."
+                                        value={data.nome}
+                                        onChange={(e) =>
+                                            setData('nome', e.target.value)
+                                        }
+                                        required
+                                    />
+                                    {errors.nome && (
+                                        <p className="text-xs text-destructive">
+                                            {errors.nome}
+                                        </p>
+                                    )}
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <Label>Curso</Label>
+                                        <Select
+                                            value={data.curso_id}
+                                            onValueChange={(val) =>
+                                                setData('curso_id', val)
+                                            }
+                                        >
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Selecione o curso" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {cursos.map((c: any) => (
+                                                    <SelectItem
+                                                        key={c.id}
+                                                        value={c.id.toString()}
+                                                    >
+                                                        {c.nome}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        {errors.curso_id && (
+                                            <p className="text-xs text-destructive">
+                                                {errors.curso_id}
+                                            </p>
+                                        )}
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Período Lectivo</Label>
+                                        <Select
+                                            value={data.periodos_lectivo_id}
+                                            onValueChange={(val) =>
+                                                setData(
+                                                    'periodos_lectivo_id',
+                                                    val,
+                                                )
+                                            }
+                                        >
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Selecione o período" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {periodosLectivos.map(
+                                                    (p: any) => (
+                                                        <SelectItem
+                                                            key={p.id}
+                                                            value={p.id.toString()}
+                                                        >
+                                                            {p.ano} -{' '}
+                                                            {p.semestre}º
+                                                            Semestre ({p.estado}
+                                                            )
+                                                        </SelectItem>
+                                                    ),
+                                                )}
+                                            </SelectContent>
+                                        </Select>
+                                        {errors.periodos_lectivo_id && (
+                                            <p className="text-xs text-destructive">
+                                                {errors.periodos_lectivo_id}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <Label>Regime</Label>
+                                        <Select
+                                            value={data.regime}
+                                            onValueChange={(val) =>
+                                                setData('regime', val)
+                                            }
+                                        >
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Selecione o regime" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="0">
+                                                    Regular
+                                                </SelectItem>
+                                                <SelectItem value="1">
+                                                    Pós-Laboral
+                                                </SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                        {errors.regime && (
+                                            <p className="text-xs text-destructive">
+                                                {errors.regime}
+                                            </p>
+                                        )}
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Turno</Label>
+                                        <Select
+                                            value={data.turno}
+                                            onValueChange={(val) =>
+                                                setData('turno', val)
+                                            }
+                                        >
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Selecione o turno" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="0">
+                                                    Manhã
+                                                </SelectItem>
+                                                <SelectItem value="1">
+                                                    Tarde
+                                                </SelectItem>
+                                                <SelectItem value="2">
+                                                    Noite
+                                                </SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                        {errors.turno && (
+                                            <p className="text-xs text-destructive">
+                                                {errors.turno}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label>Sala</Label>
+                                    <Select
+                                        value={data.sala_id}
+                                        onValueChange={(val) =>
+                                            setData('sala_id', val)
+                                        }
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Selecione a sala" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {salas.map((s: any) => (
+                                                <SelectItem
+                                                    key={s.id}
+                                                    value={s.id.toString()}
+                                                >
+                                                    {s.numero} -{' '}
+                                                    {s.tipo || 'Sala'}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    {errors.sala_id && (
+                                        <p className="text-xs text-destructive">
+                                            {errors.sala_id}
+                                        </p>
+                                    )}
+                                </div>
                             </div>
 
-                            <div className="space-y-2">
-                                <Label htmlFor="curso_id">Curso</Label>
-                                <Select
-                                    value={data.curso_id.toString()}
-                                    onValueChange={(value: string) =>
-                                        setData('curso_id', value)
-                                    }
-                                    required
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Selecione o curso da turma" />
-                                    </SelectTrigger>
-
-                                    <SelectContent>
-                                        {cursos.map((curso: any) => (
-                                            <SelectItem
-                                                value={curso.id.toString()}
-                                                key={curso.id}
-                                            >
-                                                {curso.nome}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                                {errors.curso_id && (
-                                    <p className="text-xs text-destructive">
-                                        {errors.curso_id}
-                                    </p>
-                                )}
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="ano">Ano de frequência</Label>
-                                <Select
-                                    value={data.ano.toString()}
-                                    onValueChange={(value: string) =>
-                                        setData('ano', value)
-                                    }
-                                    required
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Selecione o ano de frequência" />
-                                    </SelectTrigger>
-
-                                    <SelectContent>
-                                        <SelectItem value={'1'}>
-                                            1º Ano
-                                        </SelectItem>
-                                        <SelectItem value={'2'}>
-                                            2º Ano
-                                        </SelectItem>
-                                        <SelectItem value={'3'}>
-                                            3º Ano
-                                        </SelectItem>
-                                        <SelectItem value={'4'}>
-                                            4º Ano
-                                        </SelectItem>
-                                        <SelectItem value={'5'}>
-                                            5º Ano
-                                        </SelectItem>
-                                        <SelectItem value={'6'}>
-                                            6º Ano
-                                        </SelectItem>
-                                    </SelectContent>
-                                </Select>
-                                {errors.ano && (
-                                    <p className="text-xs text-destructive">
-                                        {errors.ano}
-                                    </p>
-                                )}
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="periodo">Periodo</Label>
-                                <Select
-                                    value={data.periodo.toString()}
-                                    onValueChange={(value: string) =>
-                                        setData('periodo', value)
-                                    }
-                                    required
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Selecione o periodo da turma" />
-                                    </SelectTrigger>
-
-                                    <SelectContent>
-                                        <SelectItem value={'1'}>
-                                            Regular
-                                        </SelectItem>
-                                        <SelectItem value={'0'}>
-                                            Pós-Laboral
-                                        </SelectItem>
-                                    </SelectContent>
-                                </Select>
-                                {errors.periodo && (
-                                    <p className="text-xs text-destructive">
-                                        {errors.periodo}
-                                    </p>
-                                )}
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="turno">Turno</Label>
-                                <Select
-                                    value={data.turno.toString()}
-                                    onValueChange={(value: string) =>
-                                        setData('turno', value)
-                                    }
-                                    required
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Selecione o turno da turma" />
-                                    </SelectTrigger>
-
-                                    <SelectContent>
-                                        <SelectItem value={'0'}>
-                                            Manhã
-                                        </SelectItem>
-                                        <SelectItem value={'1'}>
-                                            Tarde
-                                        </SelectItem>
-                                        <SelectItem value={'2'}>
-                                            Noite
-                                        </SelectItem>
-                                    </SelectContent>
-                                </Select>
-                                {errors.turno && (
-                                    <p className="text-xs text-destructive">
-                                        {errors.turno}
-                                    </p>
-                                )}
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="sala_id">Sala</Label>
-                                <Select
-                                    value={data.sala_id.toString()}
-                                    onValueChange={(value: string) =>
-                                        setData('sala_id', value)
-                                    }
-                                    required
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Selecione o sala da turma" />
-                                    </SelectTrigger>
-
-                                    <SelectContent>
-                                        {salas.map((sala: any) => (
-                                            <SelectItem
-                                                value={sala.id.toString()}
-                                                key={sala.id}
-                                            >
-                                                {sala.numero}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                                {errors.sala_id && (
-                                    <p className="text-xs text-destructive">
-                                        {errors.sala_id}
-                                    </p>
-                                )}
-                            </div>
-
+                            {/* ATRIBUIÇÕES */}
                             <div className="border-t pt-6">
                                 <div className="mb-4 flex items-center justify-between">
                                     <Label className="text-lg font-bold">
-                                        Disciplinas e Professores
+                                        Disciplinas e Docentes
                                     </Label>
                                     <Button
                                         type="button"
@@ -534,33 +536,40 @@ export default function TurmaIndex({
                                         onClick={addAtribuicao}
                                     >
                                         <Plus className="mr-1 h-4 w-4" />{' '}
-                                        Adicionar
+                                        Adicionar Disciplina
                                     </Button>
                                 </div>
 
                                 <div className="space-y-4">
-                                    {data.atribuicoes.map((item, index) => (
-                                        <div
-                                            key={index}
-                                            className="relative space-y-3 rounded-lg border bg-muted/30 p-4"
-                                        >
-                                            {data.atribuicoes.length > 1 && (
-                                                <Button
-                                                    type="button"
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    className="absolute -top-2 -right-2 h-7 w-7 rounded-full bg-destructive text-white"
-                                                    onClick={() =>
-                                                        removeAtribuicao(index)
-                                                    }
-                                                >
-                                                    <X className="h-4 w-4" />
-                                                </Button>
-                                            )}
+                                    {data.alocacoes.map((item, index) => {
+                                        const profsFiltrados =
+                                            getProfessoresDaDisciplina(
+                                                item.disciplina_id,
+                                            );
 
-                                            <div className="grid grid-cols-1 gap-3">
+                                        return (
+                                            <div
+                                                key={index}
+                                                className="relative space-y-3 rounded-lg border bg-muted/30 p-4"
+                                            >
+                                                {data.alocacoes.length > 1 && (
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="absolute -top-2 -right-2 h-7 w-7 rounded-full bg-destructive text-white hover:bg-destructive/90"
+                                                        onClick={() =>
+                                                            removeAtribuicao(
+                                                                index,
+                                                            )
+                                                        }
+                                                    >
+                                                        <X className="h-4 w-4" />
+                                                    </Button>
+                                                )}
+
                                                 <div className="space-y-1">
-                                                    <Label className="text-xs font-bold tracking-wider text-muted-foreground uppercase">
+                                                    <Label className="text-xs font-bold text-muted-foreground uppercase">
                                                         Disciplina
                                                     </Label>
                                                     <Select
@@ -575,7 +584,7 @@ export default function TurmaIndex({
                                                             )
                                                         }
                                                     >
-                                                        <SelectTrigger>
+                                                        <SelectTrigger className="bg-background">
                                                             <SelectValue placeholder="Selecione a disciplina" />
                                                         </SelectTrigger>
                                                         <SelectContent>
@@ -595,9 +604,9 @@ export default function TurmaIndex({
                                                     </Select>
                                                 </div>
 
-                                                <div className="grid grid-cols-2 gap-3">
-                                                    <div className="space-y-1">
-                                                        <Label className="text-xs font-bold tracking-wider text-muted-foreground uppercase">
+                                                <div className="grid grid-cols-3 gap-3">
+                                                    <div className="col-span-2 space-y-1">
+                                                        <Label className="text-xs font-bold text-muted-foreground uppercase">
                                                             Professor
                                                         </Label>
                                                         <Select
@@ -613,36 +622,55 @@ export default function TurmaIndex({
                                                                     val,
                                                                 )
                                                             }
+                                                            disabled={
+                                                                !item.disciplina_id
+                                                            }
                                                         >
-                                                            <SelectTrigger>
-                                                                <SelectValue placeholder="Selecione" />
+                                                            <SelectTrigger className="bg-background">
+                                                                <SelectValue
+                                                                    placeholder={
+                                                                        item.disciplina_id
+                                                                            ? 'Selecione o professor'
+                                                                            : 'Escolha a disciplina primeiro'
+                                                                    }
+                                                                />
                                                             </SelectTrigger>
                                                             <SelectContent>
-                                                                {professores.map(
-                                                                    (
-                                                                        p: any,
-                                                                    ) => (
-                                                                        <SelectItem
-                                                                            key={
-                                                                                p.id
-                                                                            }
-                                                                            value={p.id.toString()}
-                                                                        >
-                                                                            {
-                                                                                p.nome
-                                                                            }
-                                                                        </SelectItem>
-                                                                    ),
+                                                                {profsFiltrados.length ===
+                                                                0 ? (
+                                                                    <div className="p-2 text-center text-xs text-muted-foreground">
+                                                                        Nenhum
+                                                                        professor
+                                                                        habilitado
+                                                                    </div>
+                                                                ) : (
+                                                                    profsFiltrados.map(
+                                                                        (
+                                                                            p: any,
+                                                                        ) => (
+                                                                            <SelectItem
+                                                                                key={
+                                                                                    p.id
+                                                                                }
+                                                                                value={p.id.toString()}
+                                                                            >
+                                                                                {
+                                                                                    p.nome
+                                                                                }
+                                                                            </SelectItem>
+                                                                        ),
+                                                                    )
                                                                 )}
                                                             </SelectContent>
                                                         </Select>
                                                     </div>
                                                     <div className="space-y-1">
-                                                        <Label className="text-xs font-bold tracking-wider text-muted-foreground uppercase">
+                                                        <Label className="block text-center text-xs font-bold text-muted-foreground uppercase">
                                                             Tempos/Semana
                                                         </Label>
                                                         <Input
                                                             type="number"
+                                                            className="bg-background text-center"
                                                             value={
                                                                 item.tempos_semanais
                                                             }
@@ -654,405 +682,206 @@ export default function TurmaIndex({
                                                                         .value,
                                                                 )
                                                             }
+                                                            min="1"
+                                                            max="10"
                                                         />
                                                     </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
                         </form>
                     </div>
 
-                    {/* FOOTER FIXO */}
-                    <div className="border-t bg-background px-6 py-4">
-                        <div className="flex justify-end gap-2">
-                            <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() => setOpen(false)}
-                            >
-                                Cancelar
-                            </Button>
-
-                            <Button
-                                type="submit"
-                                form="Turma-form"
-                                disabled={processing}
-                            >
-                                {processing ? 'Salvando...' : 'Salvar'}
-                            </Button>
-                        </div>
+                    <div className="flex justify-end gap-2 border-t bg-background px-6 py-4">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setOpen(false)}
+                        >
+                            Cancelar
+                        </Button>
+                        <Button
+                            type="submit"
+                            form="turma-form"
+                            disabled={processing}
+                        >
+                            {processing
+                                ? 'Processando...'
+                                : isEditing
+                                  ? 'Atualizar Turma'
+                                  : 'Criar Turma'}
+                        </Button>
                     </div>
                 </SheetContent>
             </Sheet>
-            {/* //Modal de visualização - pode ser reutilizado para edição com ajustes */}
 
+            {/* MODAL DE VISUALIZAÇÃO */}
             <Sheet open={viewOpen} onOpenChange={setViewOpen}>
                 <SheetContent
                     side="right"
-                    className="flex h-full w-full flex-col border-l bg-background p-0 sm:max-w-md"
+                    className="flex h-full w-full flex-col p-0 sm:max-w-md"
                 >
-                    {/* HEADER */}
-                    <div className="border-b px-6 py-4">
-                        <SheetTitle className="text-lg font-semibold">
-                            Detalhes da Turma
+                    <div className="border-b bg-primary/5 px-6 py-6">
+                        <SheetTitle className="text-2xl font-bold text-primary">
+                            {selectedTurma?.nome}
                         </SheetTitle>
-                        <p className="text-sm text-muted-foreground">
-                            Informações detalhadas da Turma.
-                        </p>
-                    </div>
-                    {/* BODY (scrollável) */}
-                    <div className="flex-1 overflow-y-auto px-6 py-6">
-                        {selectedTurma ? (
-                            <div className="space-y-4">
-                                <div className="flex items-center space-x-4"></div>
-                                <div className="flex items-center justify-between space-y-2">
-                                    <label className="font-bold text-foreground">
-                                        Nome
-                                    </label>
-                                    <label className="font-bold text-foreground">
-                                        {selectedTurma.nome}
-                                    </label>
-                                </div>
-                                <div className="flex items-center justify-between space-y-2">
-                                    <label className="font-bold text-foreground">
-                                        Curso
-                                    </label>
-                                    <label className="font-bold text-foreground">
-                                        {selectedTurma.curso?.nome}
-                                    </label>
-                                </div>
-                                <div className="flex items-center justify-between space-y-2">
-                                    <label className="font-bold text-foreground">
-                                        Ano de frequência
-                                    </label>
-                                    <label className="font-bold text-foreground">
-                                        {selectedTurma.ano}º Ano
-                                    </label>
-                                </div>
-                                <div className="flex items-center justify-between space-y-2">
-                                    <label className="font-bold text-foreground">
-                                        Periodo
-                                    </label>
-                                    <label className="font-bold text-foreground">
-                                        {selectedTurma.periodo}
-                                    </label>
-                                </div>
-                                <div className="flex items-center justify-between space-y-2">
-                                    <label className="font-bold text-foreground">
-                                        Turno
-                                    </label>
-                                    <label className="font-bold text-foreground">
-                                        {selectedTurma.turno}
-                                    </label>
-                                </div>
-                                <div className="flex items-center justify-between space-y-2">
-                                    <label className="font-bold text-foreground">
-                                        Sala
-                                    </label>
-                                    <label className="font-bold text-foreground">
-                                        {selectedTurma.sala?.numero}
-                                    </label>
-                                </div>
-                            </div>
-                        ) : (
-                            <p className="text-center text-muted-foreground">
-                                Nenhuma Turma selecionada.
-                            </p>
-                        )}
-                    </div>
-                </SheetContent>
-            </Sheet>
-            {/* //Modal de edição - pode ser reutilizado para criação com ajustes */}
-            <Sheet open={editOpen} onOpenChange={setEditOpen}>
-                <SheetContent
-                    side="right"
-                    className="flex h-full w-full flex-col border-l bg-background p-0 sm:max-w-md"
-                >
-                    {/* HEADER */}
-                    <div className="border-b px-6 py-4">
-                        <SheetTitle className="text-lg font-semibold">
-                            Actualizar Turma
-                        </SheetTitle>
-                        <p className="text-sm text-muted-foreground">
-                            Preencha as informações da sala.
+                        <p className="mt-1 text-sm font-medium text-muted-foreground">
+                            {selectedTurma?.curso?.nome}
                         </p>
                     </div>
 
-                    {/* BODY (scrollável) */}
-                    <div className="flex-1 overflow-y-auto px-6 py-6">
-                        <form
-                            id="Turma-form"
-                            onSubmit={update}
-                            className="space-y-5"
+                    <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6">
+                        {/* Info Cards */}
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="rounded-xl border bg-muted/40 p-4">
+                                <p className="mb-1 text-xs font-bold text-muted-foreground uppercase">
+                                    Período Lectivo
+                                </p>
+                                <p className="text-sm font-semibold">
+                                    {selectedTurma?.periodo_lectivo?.ano} -{' '}
+                                    {selectedTurma?.periodo_lectivo?.semestre}º
+                                    Semestre
+                                </p>
+                            </div>
+                            <div className="rounded-xl border bg-muted/40 p-4">
+                                <p className="mb-1 text-xs font-bold text-muted-foreground uppercase">
+                                    Regime/Turno
+                                </p>
+                                <p className="text-sm font-semibold">
+                                    {
+                                        regimeMap[
+                                            selectedTurma?.regime as keyof typeof regimeMap
+                                        ]
+                                    }{' '}
+                                    /{' '}
+                                    {
+                                        turnoMap[
+                                            selectedTurma?.turno as keyof typeof turnoMap
+                                        ]
+                                    }
+                                </p>
+                            </div>
+                            <div className="rounded-xl border bg-muted/40 p-4">
+                                <p className="mb-1 text-xs font-bold text-muted-foreground uppercase">
+                                    Sala
+                                </p>
+                                <p className="text-sm font-semibold">
+                                    Sala {selectedTurma?.sala?.numero}
+                                </p>
+                            </div>
+                            <div className="rounded-xl border bg-muted/40 p-4">
+                                <p className="mb-1 text-xs font-bold text-muted-foreground uppercase">
+                                    Status
+                                </p>
+                                <Badge
+                                    variant={
+                                        selectedTurma?.periodo_lectivo
+                                            ?.estado === 'activo'
+                                            ? 'default'
+                                            : 'secondary'
+                                    }
+                                >
+                                    {selectedTurma?.periodo_lectivo?.estado}
+                                </Badge>
+                            </div>
+                        </div>
+
+                        {/* Matriz Curricular */}
+                        <div className="space-y-4">
+                            <h3 className="flex items-center gap-2 border-b pb-2 text-lg font-bold">
+                                <BookOpen className="h-5 w-5 text-primary" />{' '}
+                                Matriz Curricular
+                            </h3>
+
+                            <div className="space-y-3">
+                                {selectedTurma?.alocacoes?.length > 0 ? (
+                                    selectedTurma.alocacoes.map(
+                                        (a: any, i: number) => (
+                                            <div
+                                                key={i}
+                                                className="flex flex-col gap-2 rounded-xl border bg-card p-4 shadow-sm"
+                                            >
+                                                <p className="text-base font-bold">
+                                                    {a.disciplina?.nome}
+                                                </p>
+                                                <div className="mt-1 flex items-center justify-between">
+                                                    <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                                                        <User className="h-4 w-4" />{' '}
+                                                        {a.professor?.nome}
+                                                    </span>
+                                                    <span className="flex items-center gap-1 rounded-md bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
+                                                        <Clock className="h-3.5 w-3.5" />{' '}
+                                                        {a.tempos_semanais}{' '}
+                                                        tempos/sem
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        ),
+                                    )
+                                ) : (
+                                    <p className="rounded-lg border bg-muted/20 py-4 text-center text-sm text-muted-foreground italic">
+                                        Nenhuma disciplina atribuída a esta
+                                        turma.
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </SheetContent>
+            </Sheet>
+
+            {/* MODAL DE EXCLUSÃO */}
+            <AnimatePresence>
+                {deleteOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setDeleteOpen(false)}
+                            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+                        />
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            className="relative z-10 w-full max-w-md rounded-xl bg-background p-6 shadow-lg"
                         >
-                            <div className="space-y-2">
-                                <Label htmlFor="nome">Nome</Label>
-                                <Input
-                                    id="nome"
-                                    value={data.nome}
-                                    onChange={(e) =>
-                                        setData('nome', e.target.value)
-                                    }
-                                    required
-                                />
-                                {errors.nome && (
-                                    <p className="text-xs text-destructive">
-                                        {errors.nome}
-                                    </p>
-                                )}
+                            <h2 className="mb-4 text-lg font-semibold">
+                                Confirmar Exclusão
+                            </h2>
+                            <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-center">
+                                <AlertTitle className="text-destructive">
+                                    Atenção!
+                                </AlertTitle>
+                                <p className="mt-2 text-sm">
+                                    Tem certeza que deseja excluir a turma{' '}
+                                    <strong>{selectedTurma?.nome}</strong>?
+                                    <br />
+                                    Esta ação não poderá ser desfeita.
+                                </p>
                             </div>
-
-                            <div className="space-y-2">
-                                <Label htmlFor="curso_id">Curso</Label>
-                                <Select
-                                    value={data.curso_id.toString()}
-                                    onValueChange={(value: string) =>
-                                        setData('curso_id', value)
-                                    }
-                                    required
+                            <div className="mt-6 flex justify-end gap-2">
+                                <Button
+                                    variant="outline"
+                                    onClick={() => setDeleteOpen(false)}
                                 >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Selecione o sala da turma" />
-                                    </SelectTrigger>
-
-                                    <SelectContent>
-                                        {cursos.map(
-                                            (curso: any, index: number) => {
-                                                <SelectItem
-                                                    value={curso.id}
-                                                    key={index}
-                                                >
-                                                    {curso.nome}
-                                                </SelectItem>;
-                                            },
-                                        )}
-                                    </SelectContent>
-                                </Select>
-                                {errors.curso_id && (
-                                    <p className="text-xs text-destructive">
-                                        {errors.curso_id}
-                                    </p>
-                                )}
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="ano">Ano de frequência</Label>
-                                <Select
-                                    value={data.ano.toString()}
-                                    onValueChange={(value: string) =>
-                                        setData('ano', value)
-                                    }
-                                    required
+                                    Cancelar
+                                </Button>
+                                <Button
+                                    onClick={destroy}
+                                    className="bg-rose-600 hover:bg-rose-700"
                                 >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Selecione o ano de frequência" />
-                                    </SelectTrigger>
-
-                                    <SelectContent>
-                                        <SelectItem value={'1'}>
-                                            1º Ano
-                                        </SelectItem>
-                                        <SelectItem value={'2'}>
-                                            2º Ano
-                                        </SelectItem>
-                                        <SelectItem value={'3'}>
-                                            3º Ano
-                                        </SelectItem>
-                                        <SelectItem value={'4'}>
-                                            4º Ano
-                                        </SelectItem>
-                                        <SelectItem value={'5'}>
-                                            5º Ano
-                                        </SelectItem>
-                                        <SelectItem value={'6'}>
-                                            6º Ano
-                                        </SelectItem>
-                                    </SelectContent>
-                                </Select>
-                                {errors.ano && (
-                                    <p className="text-xs text-destructive">
-                                        {errors.ano}
-                                    </p>
-                                )}
+                                    Excluir
+                                </Button>
                             </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="periodo">Periodo</Label>
-                                <Select
-                                    value={data.periodo.toString()}
-                                    onValueChange={(value: string) =>
-                                        setData('periodo', value)
-                                    }
-                                    required
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Selecione o periodo da turma" />
-                                    </SelectTrigger>
-
-                                    <SelectContent>
-                                        <SelectItem value={'1'}>
-                                            Regular
-                                        </SelectItem>
-                                        <SelectItem value={'0'}>
-                                            Pós-Laboral
-                                        </SelectItem>
-                                    </SelectContent>
-                                </Select>
-                                {errors.periodo && (
-                                    <p className="text-xs text-destructive">
-                                        {errors.periodo}
-                                    </p>
-                                )}
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="turno">Turno</Label>
-                                <Select
-                                    value={data.turno.toString()}
-                                    onValueChange={(value: string) =>
-                                        setData('turno', value)
-                                    }
-                                    required
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Selecione o turno da turma" />
-                                    </SelectTrigger>
-
-                                    <SelectContent>
-                                        <SelectItem value={'0'}>
-                                            Manhã
-                                        </SelectItem>
-                                        <SelectItem value={'1'}>
-                                            Tarde
-                                        </SelectItem>
-                                        <SelectItem value={'2'}>
-                                            Noite
-                                        </SelectItem>
-                                    </SelectContent>
-                                </Select>
-                                {errors.turno && (
-                                    <p className="text-xs text-destructive">
-                                        {errors.turno}
-                                    </p>
-                                )}
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="sala_id">Sala</Label>
-                                <Select
-                                    value={data.sala_id.toString()}
-                                    onValueChange={(value: string) =>
-                                        setData('sala_id', value)
-                                    }
-                                    required
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Selecione o sala da turma" />
-                                    </SelectTrigger>
-
-                                    <SelectContent>
-                                        {salas.map(
-                                            (sala: any, index: number) => {
-                                                <SelectItem
-                                                    value={sala.id}
-                                                    key={index}
-                                                >
-                                                    {sala.numero}
-                                                </SelectItem>;
-                                            },
-                                        )}
-                                    </SelectContent>
-                                </Select>
-                                {errors.sala_id && (
-                                    <p className="text-xs text-destructive">
-                                        {errors.sala_id}
-                                    </p>
-                                )}
-                            </div>
-                        </form>
-                    </div>
-
-                    {/* FOOTER FIXO */}
-                    <div className="border-t bg-background px-6 py-4">
-                        <div className="flex justify-end gap-2">
-                            <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() => setEditOpen(false)}
-                            >
-                                Cancelar
-                            </Button>
-
-                            <Button
-                                type="submit"
-                                form="Turma-form"
-                                disabled={processing}
-                            >
-                                {processing ? 'Actualizando...' : 'Actualizar'}
-                            </Button>
-                        </div>
-                    </div>
-                </SheetContent>
-            </Sheet>
-            {/* //Modal de exclusão - pode ser aprimorado para confirmar com senha, etc. */}
-            {deleteOpen && (
-                <div
-                    className={clsx(
-                        'fixed inset-0 z-50 flex items-center justify-center',
-                        deleteOpen
-                            ? 'opacity-100'
-                            : 'pointer-events-none opacity-0',
-                    )}
-                >
-                    {/* Overlay */}
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        onClick={() => setDeleteOpen(false)}
-                        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-                    />
-
-                    {/* Modal */}
-                    <motion.div
-                        initial={{ scale: 0.9, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        exit={{ scale: 0.9, opacity: 0 }}
-                        className="relative z-10 w-full max-w-md rounded-xl bg-background p-6 shadow-lg"
-                    >
-                        <h2 className="mb-4 text-lg font-semibold">
-                            Confirmar Exclusão
-                        </h2>
-
-                        <motion.div className="border-variant rounded-lg border-1 bg-destructive/10 p-4 text-center">
-                            <AlertTitle>Atenção!</AlertTitle>
-                            <p className="text-sm">
-                                Tem certeza que deseja excluir a turma{' '}
-                                <strong className="text-center">
-                                    {selectedTurma?.nome}
-                                </strong>{' '}
-                                <br />
-                                Esta ação não poderá ser desfeita.
-                            </p>
                         </motion.div>
-
-                        <div className="mt-6 flex justify-end gap-2">
-                            <Button
-                                variant="outline"
-                                onClick={() => setDeleteOpen(false)}
-                            >
-                                Cancelar
-                            </Button>
-
-                            <Button
-                                onClick={destroy}
-                                className="bg-rose-600 hover:bg-rose-700"
-                            >
-                                Excluir
-                            </Button>
-                        </div>
-                    </motion.div>
-                </div>
-            )}
+                    </div>
+                )}
+            </AnimatePresence>
         </AppLayout>
     );
 }

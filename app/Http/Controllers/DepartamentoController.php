@@ -13,7 +13,8 @@ class DepartamentoController extends Controller
         $query = Departamento::query();
 
         if ($request->search) {
-            $query->where('nome', 'like', '%' . $request->search . '%');
+            $query->where('nome', 'like', '%' . $request->search . '%')
+            ->orWhere('sigla', 'like', '%' . $request->search . '%');
         }
 
         $departamentos = $query->latest()->paginate(10)->withQueryString();
@@ -28,6 +29,7 @@ class DepartamentoController extends Controller
     {
         $validated = $request->validate([
             'nome' => 'required|string|max:255',
+            'sigla' => 'required|string|max:10',
         ]);
 
         Departamento::create($validated);
@@ -39,6 +41,7 @@ class DepartamentoController extends Controller
     {
         $validated = $request->validate([
             'nome' => 'required|string|max:255',
+            'sigla' => 'required|string|max:10',
         ]);
 
         $departamento->update($validated);

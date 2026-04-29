@@ -14,7 +14,11 @@ return new class extends Migration
         Schema::create('professores', function (Blueprint $table) {
             $table->id();
             $table->string('nome');
+            $table->string('categoria');
+            $table->string('especialidade');
+            $table->integer('carga_horaria_max');
             $table->string('email')->unique();
+            $table->foreignId('departamento_id')->constrained('departamentos')->onDelete('cascade');
             $table->timestamps();
         });
     }

@@ -8,61 +8,58 @@ use Inertia\Inertia;
 
 class SalaController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
-    public function index()
+    public function index(Request $request)
     {
-        $salas = Sala::paginate(10);
-        // dd($salas);
+        $query = Sala::query();
 
-         return Inertia::render('sala/index', [
-        'salas' => $salas,
-        'search' => $request->search ?? '',
-    ]);
+        if ($request->search) {
+            $query->where('numero', 'like', "%{$request->search}%")
+                  ->orWhere('bloco', 'like', "%{$request->search}%")
+                  ->orWhere('tipo', 'like', "%{$request->search}%");
+        }
+
+        $salas = $query->paginate(10)->withQueryString();
+
+        return Inertia::render('sala/index', [
+            'salas' => $salas,
+            'search' => $request->search ?? '',
+        ]);
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
     public function store(Request $request)
     {
-        // dd($request);
-
+        // dd($request->all());
         $validated = $request->validate([
-            'designacao' => ['required', 'max:255'],
-            'estado' => ['required', 'integer'],
-            'numero' => ['required', 'integer', 'unique:salas'],
-            'capacidade' => ['required', 'integer'],
+            'bloco'      => ['required', 'integer'],
+            'numero'     => ['required', 'integer', 'unique:Salas,numero'],
+            'capacidade' => ['required', 'integer', 'min:1'],
+            'tipo'       => ['required', 'string'], // Ex: Laboratório, Sala Comum
+            'estado'     => ['required', 'integer'],
         ]);
 
         Sala::create($validated);
-        return redirect()->route('salas.index')->with('success', 'Sala criada com sucesso!');
+
+        return redirect()->back()->with('success', 'Sala criada com sucesso!');
     }
 
-   
-    /**
-     * Update the specified resource in storage.
-     */
     public function update(Request $request, Sala $sala)
     {
         $validated = $request->validate([
-            'designacao' => ['required', 'max:255'],
-            'estado' => ['required', 'integer'],
-            'numero' => ['required', 'integer', 'unique:salas,escola_id'],
-            'capacidade' => ['required', 'integer'],
+            'bloco'      => ['required', 'integer'],
+            'numero'     => ['required', 'integer', 'unique:Salas,numero,' . $sala->id],
+            'capacidade' => ['required', 'integer', 'min:1'],
+            'tipo'       => ['required', 'string'],
+            'estado'     => ['required', 'integer'],
         ]);
 
         $sala->update($validated);
-        return redirect()->route('salas.index')->with('success', 'Sala actualizada com sucesso!');
+
+        return redirect()->back()->with('success', 'Sala actualizada com sucesso!');
     }
 
-    /**
-     * Remove the specified resource from storage.
-     */
     public function destroy(Sala $sala)
     {
         $sala->delete();
-        return redirect()->route('salas.index')->with('success', 'Sala deletada com sucesso!');
+        return redirect()->back()->with('success', 'Sala eliminada com sucesso!');
     }
 }

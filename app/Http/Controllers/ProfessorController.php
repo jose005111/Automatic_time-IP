@@ -10,6 +10,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
+// ... imports anteriores
+
 class ProfessorController extends Controller
 {
     public function index(Request $request)
@@ -17,62 +19,63 @@ class ProfessorController extends Controller
         $professores = Professor::with(['disciplinasQueEnsina', 'disponibilidades'])
             ->when($request->search, function ($query, $search) {
                 $query->where('nome', 'like', "%{$search}%")
-                      ->orWhere('email', 'like', "%{$search}%")
-                      ->orWhereHas('disciplinasQueEnsina', function ($q) use ($search) {
-                          $q->where('nome', 'like', "%{$search}%");
-                      });
+                      ->orWhere('email', 'like', "%{$search}%");
             })
             ->latest()
             ->paginate(10)
             ->withQueryString();
 
-        // Buscar os tempos de aula ordenados
-        $temposAulas = TempoAula::orderBy('turno')->orderBy('hora_inicio')->get();
-
         return Inertia::render('professores/index', [
             'professores' => $professores,
-            'departamentos' => Departamento::all(['id', 'nome']),
-            'disciplinas' => Disciplina::all(),
-            'tempos_aulas' => $temposAulas, // ENVIAR PARA O REACT
+            'departamentos' => Departamento::all(['id', 'nome']), // Para o Select
+            'disciplinas' => Disciplina::all(['id', 'nome']),
+            'tempos_aulas' => TempoAula::orderBy('turno')->orderBy('hora_inicio')->get(),
             'filters' => $request->only(['search'])
         ]);
     }
 
-    // ... (restante do código: store, update, destroy, syncDisciplinas mantêm-se como corrigimos antes) ...
     public function store(Request $request)
     {
         $validated = $request->validate([
             'nome' => 'required|string|max:255',
-            'email' => 'required|email|unique:professores,email',  
+            'email' => 'required|email|unique:professores,email',
+            'categoria' => 'required|string',
+            'especialidade' => 'required|string',
+            'carga_horaria_max' => 'required|integer|min:1',
+            'departamento_id' => 'required|exists:departamentos,id',
             'disciplina_ids' => 'nullable|array',
             'disponibilidade' => 'required|array',
         ]);
 
-        DB::transaction(function () use ($validated, $request) {
+        DB::transaction(function () use ($validated) {
             $professor = Professor::create([
                 'nome' => $validated['nome'],
-                'email' => $validated['email']
+                'email' => $validated['email'],
+                'categoria' => $validated['categoria'],
+                'especialidade' => $validated['especialidade'],
+                'carga_horaria_max' => $validated['carga_horaria_max'],
+                'departamento_id' => $validated['departamento_id'],
             ]);
 
             if (!empty($validated['disciplina_ids'])) {
                 $professor->disciplinasQueEnsina()->sync($validated['disciplina_ids']);
             }
 
-            $disponibilidadesData = [];
-            foreach ($validated['disponibilidade'] as $disp) {
-                [$dia, $tempo_aula] = explode('-', $disp);
-                $disponibilidadesData[] = [
+            $disponibilidadesData = array_map(function ($disp) use ($professor) {
+                [$dia, $tempo_id] = explode('-', $disp);
+                return [
                     'professor_id' => $professor->id,
                     'dia_semana' => $dia,
-                    'tempo_aula_id' => $tempo_aula,
+                    'tempo_aula_id' => $tempo_id,
                     'created_at' => now(),
                     'updated_at' => now(),
                 ];
-            }
+            }, $validated['disponibilidade']);
+
             DB::table('disponibilidade_professores')->insert($disponibilidadesData);
         });
 
-        return redirect()->route('professores.index')->with('success', 'Professor e disponibilidade cadastrados!');
+        return redirect()->route('professores.index')->with('success', 'Professor cadastrado!');
     }
 
     public function update(Request $request, Professor $professore)
@@ -80,15 +83,16 @@ class ProfessorController extends Controller
         $validated = $request->validate([
             'nome' => 'required|string|max:255',
             'email' => 'required|email|unique:professores,email,' . $professore->id,
+            'categoria' => 'required|string',
+            'especialidade' => 'required|string',
+            'carga_horaria_max' => 'required|integer|min:1',
+            'departamento_id' => 'required|exists:departamentos,id',
             'disciplina_ids' => 'nullable|array',
             'disponibilidade' => 'required|array',
         ]);
 
         DB::transaction(function () use ($validated, $professore) {
-            $professore->update([
-                'nome' => $validated['nome'],
-                'email' => $validated['email']
-            ]);
+            $professore->update($validated);
 
             if (isset($validated['disciplina_ids'])) {
                 $professore->disciplinasQueEnsina()->sync($validated['disciplina_ids']);
@@ -96,22 +100,23 @@ class ProfessorController extends Controller
 
             DB::table('disponibilidade_professores')->where('professor_id', $professore->id)->delete();
             
-            $disponibilidadesData = [];
-            foreach ($validated['disponibilidade'] as $disp) {
-                [$dia, $tempo_aula] = explode('-', $disp);
-                $disponibilidadesData[] = [
+            $disponibilidadesData = array_map(function ($disp) use ($professore) {
+                [$dia, $tempo_id] = explode('-', $disp);
+                return [
                     'professor_id' => $professore->id,
                     'dia_semana' => $dia,
-                    'tempo_aula_id' => $tempo_aula,
+                    'tempo_aula_id' => $tempo_id,
                     'created_at' => now(),
                     'updated_at' => now(),
                 ];
-            }
+            }, $validated['disponibilidade']);
+
             DB::table('disponibilidade_professores')->insert($disponibilidadesData);
         });
 
         return redirect()->route('professores.index')->with('success', 'Dados atualizados!');
     }
+
 
     public function destroy(Professor $professore)
     {

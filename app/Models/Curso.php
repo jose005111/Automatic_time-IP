@@ -10,11 +10,19 @@ class Curso extends Model
     
     protected $fillable = [
         'nome',
+        'descricao',
+        'data_inicio',
+        'data_fim',
+        'departamento_id',
     ];
     
       //Relacionamentos
 
     public function turmas(){
         return $this->hasMany(Turma::class);
+    }
+
+    public function departamento(){
+        return $this->belongsTo(Departamento::class);
     }
 }

@@ -44,8 +44,8 @@ const mainNavItems: NavItem[] = [
         icon: GraduationCap,
     },
     {
-        title: 'Anos',
-        href: '/anos',
+        title: 'Periodo Lectivo',
+        href: '/periodos_lectivos',
         icon: CalendarDays,
     },
     {
@@ -74,8 +74,13 @@ const mainNavItems: NavItem[] = [
         icon: BookOpen,
     },
     {
+        title: 'Alunos',
+        href: '/alunos',
+        icon: User,
+    },
+    {
         title: 'Horários',
-        href: home(),
+        href: '/horarios',
         icon: Calendar,
     },
 ];

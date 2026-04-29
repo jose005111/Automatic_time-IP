@@ -10,28 +10,47 @@ class Turma extends Model
 
     protected $fillable = [
         'nome',
-        'periodo',
+        'regime',      // antigo 'periodo'
         'turno',
-        'ano',
+        'periodos_lectivo_id',
         'sala_id',
         'curso_id'
     ];
 
-    //Relacionamentos
+    // Accessor para manter compatibilidade com código existente
+    public function getPeriodoAttribute()
+    {
+        return $this->regime;
+    }
 
-    public function sala(){
+    public function getAnoAttribute()
+    {
+        // Se você tiver o ano na turma, caso contrário, pode vir do curso
+        return $this->curso->duracao ?? '1';
+    }
+
+    // Relacionamentos
+    public function sala()
+    {
         return $this->belongsTo(Sala::class);
     }
-    public function curso(){
+
+    public function curso()
+    {
         return $this->belongsTo(Curso::class);
     }
 
-    public function alocacoes() // O que a turma tem de ter aula
+    public function periodoLectivo()
+    {
+        return $this->belongsTo(PeriodoLectivo::class, 'periodos_lectivo_id');
+    }
+
+    public function alocacoes() // O que a turma tem de ter aula (TPD)
     {
         return $this->hasMany(TPD::class);
     }
 
-    public function horarioGerado() // As aulas efetivas na grelha
+    public function aulas() // As aulas efetivas na grelha
     {
         return $this->hasMany(AulaHorario::class);
     }

@@ -10,7 +10,18 @@ class Departamento extends Model
     
     protected $fillable = [
         'nome',
+        'sigla',
     ];
+
+    public function cursos()
+    {
+        return $this->hasMany(Curso::class, 'departamento_id');
+    }
+
+    public function professores()
+    {
+        return $this->hasMany(Professor::class, 'departamento_id');
+    }
 
 }
   

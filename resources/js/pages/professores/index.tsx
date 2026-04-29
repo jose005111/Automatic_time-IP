@@ -41,6 +41,7 @@ const formatTime = (timeString: string) => {
 
 export default function ProfessorIndex({
     professores = [],
+    departamentos = [],
     disciplinas = [],
     tempos_aulas = [], // NOVO: Dados dinâmicos do Controller
     search = '',
@@ -56,6 +57,10 @@ export default function ProfessorIndex({
     const { data, setData, post, put, processing, errors, reset } = useForm({
         nome: '',
         email: '',
+        categoria: '',
+        especialidade: '',
+        carga_horaria_max: 0,
+        departamento_id: '',
         disciplina_ids: [] as string[],
         disponibilidade: [] as string[],
     });
@@ -161,8 +166,13 @@ export default function ProfessorIndex({
         setData({
             nome: prof.nome,
             email: prof.email,
+            categoria: prof.categoria || '',
+            especialidade: prof.especialidade || '',
+            carga_horaria_max: prof.carga_horaria_max || 0,
+            departamento_id: prof.departamento_id || '',
             disciplina_ids:
-                prof.disciplinas?.map((d: any) => d.id.toString()) || [],
+                prof.disciplinas_que_ensina?.map((d: any) => d.id.toString()) ||
+                [],
             disponibilidade: dispFormatada,
         });
         setEditOpen(true);
@@ -256,6 +266,10 @@ export default function ProfessorIndex({
                             <tr className="border-b text-left">
                                 <th className="p-3 font-medium">Professor</th>
                                 <th className="p-3 font-medium">Email</th>
+                                <th className="p-3 font-medium">Categoria</th>
+                                <th className="p-3 font-medium">
+                                    Especialidade
+                                </th>
                                 <th className="p-3 text-center font-medium">
                                     Ações
                                 </th>
@@ -273,6 +287,12 @@ export default function ProfessorIndex({
                                         </td>
                                         <td className="p-3 text-muted-foreground italic">
                                             {prof.email}
+                                        </td>
+                                        <td className="p-3 text-muted-foreground italic">
+                                            {prof.categoria}
+                                        </td>
+                                        <td className="p-3 text-muted-foreground italic">
+                                            {prof.especialidade}
                                         </td>
                                         <td className="p-3">
                                             <div className="flex justify-center space-x-2">
@@ -386,6 +406,98 @@ export default function ProfessorIndex({
                                         }
                                         required
                                     />
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="categoria">Categoria</Label>
+                                    <select
+                                        id="categoria"
+                                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                        value={data.categoria}
+                                        onChange={(e) =>
+                                            setData('categoria', e.target.value)
+                                        }
+                                        required
+                                    >
+                                        <option value="">Selecione...</option>
+                                        <option value="Auxiliar">
+                                            Auxiliar
+                                        </option>
+                                        <option value="Assistente">
+                                            Assistente
+                                        </option>
+                                        <option value="Associado">
+                                            Associado
+                                        </option>
+                                        <option value="Catedrático">
+                                            Catedrático
+                                        </option>
+                                    </select>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="especialidade">
+                                        Especialidade
+                                    </Label>
+                                    <Input
+                                        id="especialidade"
+                                        value={data.especialidade}
+                                        onChange={(e) =>
+                                            setData(
+                                                'especialidade',
+                                                e.target.value,
+                                            )
+                                        }
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="carga">
+                                        Carga Horária Máx.
+                                    </Label>
+                                    <Input
+                                        id="carga"
+                                        type="number"
+                                        value={data.carga_horaria_max}
+                                        onChange={(e) =>
+                                            setData(
+                                                'carga_horaria_max',
+                                                Number(e.target.value),
+                                            )
+                                        }
+                                        required
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="departamento_id">
+                                        Departamento
+                                    </Label>
+                                    <select
+                                        id="departamento_id"
+                                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                        value={data.departamento_id}
+                                        onChange={(e) =>
+                                            setData(
+                                                'departamento_id',
+                                                e.target.value,
+                                            )
+                                        }
+                                        required
+                                    >
+                                        <option value="">Selecione...</option>
+                                        {departamentos.map((dept: any) => (
+                                            <option
+                                                key={dept.id}
+                                                value={dept.id}
+                                            >
+                                                {dept.nome}
+                                            </option>
+                                        ))}
+                                    </select>
                                 </div>
                             </div>
 

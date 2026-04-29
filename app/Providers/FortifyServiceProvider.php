@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Actions\Fortify\CreateNewUser;
 use App\Actions\Fortify\ResetUserPassword;
+use App\Models\User; // <-- 1. IMPORTANTE: Adiciona o import do Model User
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -47,9 +48,11 @@ class FortifyServiceProvider extends ServiceProvider
      */
     private function configureViews(): void
     {
+        // 2. ATUALIZADO: Login com verificação de utilizadores existentes
         Fortify::loginView(fn (Request $request) => Inertia::render('auth/login', [
             'canResetPassword' => Features::enabled(Features::resetPasswords()),
-            'canRegister' => Features::enabled(Features::registration()),
+            // canRegister agora é true apenas se não houver NENHUM user na base de dados
+            'canRegister' => Features::enabled(Features::registration()) && User::count() === 0,
             'status' => $request->session()->get('status'),
         ]));
 
@@ -66,7 +69,14 @@ class FortifyServiceProvider extends ServiceProvider
             'status' => $request->session()->get('status'),
         ]));
 
-        Fortify::registerView(fn () => Inertia::render('auth/register'));
+        // 3. ATUALIZADO: Bloqueio total da rota de registo se já houver um admin
+        Fortify::registerView(function () {
+            if (User::count() > 0) {
+                // Se já existir um utilizador, aborta com erro 403 (Proibido)
+                abort(403, 'O registo de novos administradores está desativado.');
+            }
+            return Inertia::render('auth/register');
+        });
 
         Fortify::twoFactorChallengeView(fn () => Inertia::render('auth/two-factor-challenge'));
 

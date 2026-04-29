@@ -11,10 +11,13 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('anos', function (Blueprint $table) {
+        Schema::create('periodos_lectivos', function (Blueprint $table) {
             $table->id();
             $table->integer('ano');
-            $table->integer('estado')->default(1); // 1: Ativo, 0: Inativo
+            $table->string('estado')->default('inactivo');
+            $table->integer('semestre');
+            $table->date('data_inicio');
+            $table->date('data_fim');
             $table->timestamps();
         });
     }
@@ -24,6 +27,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('anos');
+        Schema::dropIfExists('periodos_lectivos');
     }
 };

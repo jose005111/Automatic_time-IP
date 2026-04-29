@@ -13,10 +13,11 @@ return new class extends Migration
     {
         Schema::create('salas', function (Blueprint $table) {
             $table->id();
-            $table->string('designacao');
-            $table->integer('estado');
-            $table->integer('numero');
+            $table->integer('bloco');
             $table->integer('capacidade');
+            $table->integer('numero')->unique();
+            $table->enum('tipo', ['teórica', 'laboratório']);
+            $table->integer('estado')->default(1); // 1 para disponível, 0 para indisponível
             $table->timestamps();
         });
     }

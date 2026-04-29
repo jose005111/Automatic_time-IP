@@ -8,10 +8,11 @@ class Sala extends Model
 {
     protected $table = 'Salas';
     protected $fillable = [
-        'designacao',
-          'estado',
-          'numero',
-          'capacidade',
+      'bloco',
+        'numero',
+        'capacidade',   
+        'tipo',
+        'estado'
     ];
 
     //Relacionamentos
