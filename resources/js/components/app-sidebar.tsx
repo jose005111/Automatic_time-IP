@@ -1,17 +1,11 @@
-import { Link } from '@inertiajs/react';
 import {
     LayoutDashboard,
-    Building2,
-    GraduationCap,
-    CalendarDays,
-    DoorOpen,
-    User,
-    Clock,
     Users,
-    BookOpen,
-    Calendar,
+    UserPlus,
+    ArrowRightLeft,
+    MapPin,
+    FileText,
 } from 'lucide-react';
-// import { NavFooter } from '@/components/nav-footer';
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
 import {
@@ -23,9 +17,10 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import { dashboard, home } from '@/routes';
+import { dashboard } from '@/routes';
 import type { NavItem } from '@/types';
 import AppLogo from './app-logo';
+import { Link } from '@inertiajs/react';
 
 const mainNavItems: NavItem[] = [
     {
@@ -34,69 +29,31 @@ const mainNavItems: NavItem[] = [
         icon: LayoutDashboard,
     },
     {
-        title: 'Departamentos',
-        href: '/departamentos',
-        icon: Building2,
-    },
-    {
-        title: 'Cursos',
-        href: '/cursos',
-        icon: GraduationCap,
-    },
-    {
-        title: 'Periodo Lectivo',
-        href: '/periodos_lectivos',
-        icon: CalendarDays,
-    },
-    {
-        title: 'Salas',
-        href: '/salas',
-        icon: DoorOpen,
-    },
-    {
-        title: 'Professores',
-        href: '/professores',
-        icon: User,
-    },
-    {
-        title: 'Tempos',
-        href: '/tempos_aula', // Nota: Ajustei aqui para coincidir com a rota de tempos de aula que definimos antes
-        icon: Clock,
-    },
-    {
-        title: 'Turmas',
-        href: '/turmas',
+        title: 'Munícipes',
+        href: '/municipes',
         icon: Users,
     },
     {
-        title: 'Disciplinas',
-        href: '/disciplinas',
-        icon: BookOpen,
+        title: 'Recrutamentos',
+        href: '/recrutamentos',
+        icon: UserPlus,
     },
     {
-        title: 'Alunos',
-        href: '/alunos',
-        icon: User,
+        title: 'Transferências',
+        href: '/transferencias', // Note: we can add later, for now redirect to recrutamentos
+        icon: ArrowRightLeft,
     },
     {
-        title: 'Horários',
-        href: '/horarios',
-        icon: Calendar,
+        title: 'Localizações',
+        href: '/localizacoes',
+        icon: MapPin,
+    },
+    {
+        title: 'Relatórios',
+        href: '/relatorios',
+        icon: FileText,
     },
 ];
-
-// const footerNavItems: NavItem[] = [
-//     {
-//         title: 'Repository',
-//         href: 'https://github.com/laravel/react-starter-kit',
-//         icon: Folder,
-//     },
-//     {
-//         title: 'Documentation',
-//         href: 'https://laravel.com/docs/starter-kits#react',
-//         icon: BookOpen,
-//     },
-// ];
 
 export function AppSidebar() {
     return (
@@ -112,13 +69,10 @@ export function AppSidebar() {
                     </SidebarMenuItem>
                 </SidebarMenu>
             </SidebarHeader>
-
             <SidebarContent>
                 <NavMain items={mainNavItems} />
             </SidebarContent>
-
             <SidebarFooter>
-                {/* <NavFooter items={footerNavItems} className="mt-auto" /> */}
                 <NavUser />
             </SidebarFooter>
         </Sidebar>

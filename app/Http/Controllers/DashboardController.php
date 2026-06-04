@@ -2,55 +2,46 @@
 
 namespace App\Http\Controllers;
 
-use Inertia\Inertia;
-use App\Models\Turma;
-use App\Models\Professor;
-use App\Models\Curso;
-use App\Models\AulaHorario;
+use App\Models\Municipe;
+use App\Models\Recrutamento;
+use App\Models\Transferencia;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class DashboardController extends Controller
 {
-    public function index()
+    public function index(): Response
     {
-        // 1. Contagens Básicas
-        $totalTurmas = Turma::count();
-        $totalProfessores = Professor::count();
-        $totalCursos = Curso::count();
-        $aulasAgendadas = AulaHorario::count();
+        // Estatísticas principais
+        $estatisticas = [
+            'totalMunicipes' => Municipe::count(),
+            'recrutamentosPendentes' => Recrutamento::where('estado', 0)->count(),
+            'recrutamentosAprovados' => Recrutamento::where('estado', 1)->count(),
+            'totalTransferencias' => Transferencia::count(),
+            'munícipesComBIValido' => Municipe::whereNotNull('bi_numero')
+                ->where('bi_data_validade', '>=', now())
+                ->count(),
+        ];
 
-        // 2. Saúde dos Horários
-        // Vamos calcular a percentagem de turmas que já têm pelo menos uma aula no horário
-        $turmasComHorario = Turma::has('aulas')->count();
-        $saudePercentagem = $totalTurmas > 0 ? round(($turmasComHorario / $totalTurmas) * 100) : 0;
-
-        // 3. Últimos Horários (Busca as últimas 5 turmas e conta quantas aulas cada uma tem)
-        $recentSchedules = Turma::with('curso')
-            ->withCount('aulas')
-            ->orderByDesc('updated_at') // Ordena pelas turmas modificadas mais recentemente
-            ->take(5)
+        // Últimos 8 recrutamentos com nome do munícipe
+        $recentRecrutamentos = Recrutamento::with('municipe')
+            ->latest()
+            ->take(8)
             ->get()
-            ->map(function ($turma) {
+            ->map(function ($rec) {
                 return [
-                    'id' => $turma->id,
-                    // Concatena o nome da turma com o curso
-                    'name' => $turma->nome . ' - ' . ($turma->curso->nome ?? 'Geral'), 
-                    'date' => $turma->updated_at ? $turma->updated_at->format('d/m/Y') : 'N/A',
-                    'status' => $turma->aulas_count > 0 ? 'Concluído' : 'Rascunho',
-                    'classes' => $turma->aulas_count,
+                    'id' => $rec->id,
+                    'municipe_nome' => $rec->municipe->nome_completo ?? 'Desconhecido',
+                    'data_recruta' => $rec->data_recruta,
+                    'estado' => $rec->estado,
+                    'municipio' => $rec->municipe->municipioNaturalidade->nome ?? null,
                 ];
             });
 
-        // 4. Envia para o React via Inertia
-        return Inertia::render('dashboard', [
-            'estatisticas' => [
-                'totalTurmas' => $totalTurmas,
-                'totalProfessores' => $totalProfessores,
-                'totalCursos' => $totalCursos,
-                'saude' => $saudePercentagem,
-                'aulasAgendadas' => $aulasAgendadas
-            ],
-            'recentSchedules' => $recentSchedules
+        return Inertia::render('Dashboard', [
+            'estatisticas' => $estatisticas,
+            'recentRecrutamentos' => $recentRecrutamentos,
         ]);
     }
 }

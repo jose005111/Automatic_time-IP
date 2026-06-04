@@ -1,98 +1,95 @@
 <?php
 
-use App\Models\User;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\PeriodoLectivoController;
-use App\Http\Controllers\CursoController;
-use App\Http\Controllers\DepartamentoController;
-use App\Http\Controllers\DisciplinaController;
-use App\Http\Controllers\HorarioController;
-use App\Http\Controllers\ProfessorController;
-use App\Http\Controllers\SalaController;
-use App\Http\Controllers\TempoAulaController;
-use App\Http\Controllers\PortalHorarioController;
-use App\Http\Controllers\TurmaController;
+use App\Http\Controllers\MunicipeController;
+use App\Http\Controllers\ProvinciaController;
+use App\Http\Controllers\MunicipioController;
+use App\Http\Controllers\RecrutamentoController;
+use App\Http\Controllers\ReportController;
+use App\Http\Controllers\TransferenciaController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
-use Laravel\Fortify\Features;
+
+/*
+|--------------------------------------------------------------------------
+| Web Routes - SIGID (Sistema Informático de Gestão da Informação)
+| Administração Municipal de Benguela - DMRMAB
+|--------------------------------------------------------------------------
+| Todas as rotas protegidas por auth + verified.
+| Padrão Inertia + React: index pages com paginação + modals para CRUD.
+*/
 
 Route::get('/', function () {
-    return Inertia::render('welcome', [
-        'canRegister' => Features::enabled(Features::registration()) && User::count() === 0,
-    ]);
-})->name('home');
+    return redirect()->route('dashboard');
+});
 
+// =====================================================
+// ROTAS AUTENTICADAS
+// =====================================================
+Route::middleware(['auth', 'verified'])->group(function () {
 
-Route::get('/dashboard', [DashboardController::class, 'index'])
+    // ------------------ DASHBOARD ------------------
+    Route::get('/dashboard', [DashboardController::class, 'index'])
+        ->name('dashboard');
+
+    // ------------------ MUNÍCIPES (Módulo Principal) ------------------
+    // Gestão completa de munícipes + dados relacionados via modals
+    Route::resource('municipes', MunicipeController::class)
+        ->except(['create', 'show', 'edit']);
+
+    // Rotas adicionais para dados relacionados (chamadas via Modal enriquecido)
+    Route::post('/municipes/{municipe}/biografico', [MunicipeController::class, 'storeBiografico'])
+        ->name('municipes.biografico.store');
+
+    Route::post('/municipes/{municipe}/complementar', [MunicipeController::class, 'storeComplementar'])
+        ->name('municipes.complementar.store');
+
+    Route::post('/municipes/{municipe}/endereco', [MunicipeController::class, 'storeEndereco'])
+        ->name('municipes.endereco.store');
+
+    Route::post('/municipes/{municipe}/recrutamento', [MunicipeController::class, 'storeRecrutamento'])
+        ->name('municipes.recrutamento.store');
+
+    // ------------------ LOCALIZAÇÕES (Províncias + Municípios) ------------------
+    // Gestão de províncias (página combinada com municípios)
+    Route::resource('provincias', ProvinciaController::class)
+        ->except(['create', 'show', 'edit'])
+        ->names('provincias');
+
+          Route::resource('localizacoes', ProvinciaController::class)
+        ->except(['create', 'show', 'edit'])
+        ->names('provincias');
+    // Gestão de municípios (pode ser usado em modal ou página separada)
+    Route::resource('municipios', MunicipioController::class)
+        ->except(['create', 'show', 'edit'])
+        ->names('municipios');
+
+    // Alternativa: se quiseres manter o nome "localizacoes" apontando para a página combinada
+    // Route::get('/localizacoes', [ProvinciaController::class, 'index'])->name('localizacoes.index');
+
+    // ------------------ RECRUTAMENTOS ------------------
+    // Recenseamento Militar / Recrutamento
+    Route::resource('recrutamentos', RecrutamentoController::class)
+        ->except(['create', 'show', 'edit']);
+
+    // ------------------ TRANSFERÊNCIAS ------------------
+    // Solicitação e aprovação de transferências entre municípios
+    Route::resource('transferencias', TransferenciaController::class)
+        ->except(['create', 'show', 'edit']);
+
+    // Rota dedicada para aprovação (mais segura e clara que editar estado)
+    Route::post('/transferencias/{transferencia}/aprovar', [TransferenciaController::class, 'aprovar'])
+        ->name('transferencias.aprovar');
+
+        Route::get('/relatorios', [ReportController::class, 'index'])
     ->middleware(['auth', 'verified'])
-    ->name('dashboard');
+    ->name('reports.index');
 
-// Rotas para gerenciamento de departamentos
-Route::resource('departamentos', DepartamentoController::class)->except(['show', 'edit'])->middleware(['auth', 'verified']);
-Route::post('/departamentos/{departamento}', [DepartamentoController::class, 'update'])->name('departamentos.update');
-
-// Rotas para gerenciamento de cursos
-Route::resource('cursos', CursoController::class)->except(['show', 'edit'])->middleware(['auth', 'verified']);
-Route::post('/cursos/{curso}', [CursoController::class, 'update'])->name('cursos.update');
-
-// Rotas para gerenciamento de Turmas
-Route::resource('turmas', TurmaController::class)->except(['show', 'edit'])->middleware(['auth', 'verified']);
-Route::post('/turmas/{turma}', [TurmaController::class, 'update'])->name('turmas.update');
-
-
-Route::prefix('horarios')->group(function () {
-    Route::get('/', [HorarioController::class, 'index'])->name('horarios.index');
-    Route::post('/gerar', [HorarioController::class, 'gerarAutomaticamente'])->name('horarios.gerar');
-    Route::post('/turma/{turma}/gerar', [HorarioController::class, 'gerarPorTurma'])->name('horarios.gerar.turma');
-    Route::get('/turma/{turma}/pdf', [HorarioController::class, 'exportarPdf'])->name('horarios.pdf');
 });
 
-Route::get('/horarios/print', [HorarioController::class, 'print'])->name('horarios.print');
-Route::get('/horarios/exportar-pdf/{turma}', [HorarioController::class, 'exportarPdf'])->name('horarios.pdf');
-
-// Rotas para gerenciamento de classes, incluindo impressão de relatórios
-Route::resource('periodos_lectivos', PeriodoLectivoController::class)->except(['show', 'edit'])->middleware(['auth', 'verified']);
-Route::post('/periodos_lectivos/{periodo}', [PeriodoLectivoController::class, 'update'])->name('periodos_lectivos.update');
-Route::get('/periodos_lectivos/print', [PeriodoLectivoController::class, 'print'])
-    ->name('periodos_lectivos.print');
-
-
-// Rotas para gerenciamento de salas, incluindo impressão de relatórios
-Route::resource('salas', SalaController::class)->except(['show', 'edit'])->middleware(['auth', 'verified']);
-Route::post('/salas/{sala}', [SalaController::class, 'update'])->name('salas.update');
-Route::get('/salas/print', [SalaController::class, 'print'])
-    ->name('salas.print');
-
-// Rotas para gerenciamento de tempos_aula, incluindo impressão de relatórios
-Route::resource('tempos_aula', TempoAulaController::class)->except(['show', 'edit'])->middleware(['auth', 'verified']);
-Route::post('/tempos_aula/{tempo_aula}', [TempoAulaController::class, 'update'])->name('tempos_aula.update');
-Route::get('/tempos_aula/print', [TempoAulaController::class, 'print'])
-    ->name('tempos_aula.print');
-
-
-// Rotas para gerenciamento de disciplinas, incluindo impressão de relatórios
-Route::resource('disciplinas', DisciplinaController::class)->except(['show', 'edit'])->middleware(['auth', 'verified']);
-Route::post('/disciplinas/{disciplina}', [DisciplinaController::class, 'update'])->name('disciplinas.update');
-Route::get('/disciplinas/print', [DisciplinaController::class, 'print'])
-    ->name('disciplinas.print');
-
-// Rotas para gerenciamento de professores
-Route::resource('professores', ProfessorController::class)->except(['show', 'edit'])->middleware(['auth', 'verified']);
-
-Route::put('/professores/{professor}/disciplinas', [ProfessorController::class, 'syncDisciplinas'])
-    ->name('professores.disciplinas.sync');
-
-
-// ROTAS PÚBLICAS (Fora do middleware auth)
-Route::get('/portal', [PortalHorarioController::class, 'index'])->name('portal.index');
-Route::post('/portal/consultar', [PortalHorarioController::class, 'consultar'])->name('portal.consultar');
-
-// Rotas para alunos (Admin)
-Route::prefix('alunos')->group(function () {
-    Route::get('/', [PortalHorarioController::class, 'indexAdmin'])->name('alunos.index');
-    Route::post('/adicionar', [PortalHorarioController::class, 'storeAluno'])->name('alunos.store');
-    Route::post('/importar', [PortalHorarioController::class, 'importarAlunos'])->name('alunos.import');
-    Route::put('/{aluno}', [PortalHorarioController::class, 'updateAluno'])->name('alunos.update');
-    Route::delete('/{aluno}', [PortalHorarioController::class, 'destroyAluno'])->name('alunos.destroy');
-});
-require __DIR__.'/settings.php';
+// =====================================================
+// FALLBACK / 404 personalizado (opcional)
+// =====================================================
+// Route::fallback(function () {
+//     return Inertia::render('Errors/404');
+// });
