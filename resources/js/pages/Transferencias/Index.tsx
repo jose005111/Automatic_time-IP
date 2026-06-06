@@ -43,6 +43,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Plus, Edit, Trash2, Search, X, CheckCircle } from 'lucide-react';
 import { type BreadcrumbItem } from '@/types';
+import MunicipeBox from '@/components/component/MunicipeBox';
 
 interface Recrutamento {
     id: number;
@@ -500,29 +501,15 @@ export default function TransferenciasIndex({
                                 render={({ field }) => (
                                     <FormItem>
                                         <FormLabel>Recrutamento *</FormLabel>
-                                        <Select
-                                            onValueChange={field.onChange}
-                                            value={field.value?.toString()}
-                                        >
-                                            <FormControl>
-                                                <SelectTrigger>
-                                                    <SelectValue placeholder="Selecione o recrutamento" />
-                                                </SelectTrigger>
-                                            </FormControl>
-                                            <SelectContent>
-                                                {recrutamentos.map((r) => (
-                                                    <SelectItem
-                                                        key={r.id}
-                                                        value={r.id.toString()}
-                                                    >
-                                                        {
-                                                            r.municipe
-                                                                .nome_completo
-                                                        }
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
+                                        <MunicipeBox
+                                            value={field.value}
+                                            onChange={field.onChange}
+                                            listas={recrutamentos.map((r) => ({
+                                                id: r.id,
+                                                nome_completo:
+                                                    r.municipe.nome_completo,
+                                            }))}
+                                        />
                                         <FormMessage />
                                     </FormItem>
                                 )}

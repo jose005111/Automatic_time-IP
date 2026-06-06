@@ -6,10 +6,6 @@ use App\Models\Municipe;
 use App\Models\Provincia;
 use App\Models\Municipio;
 use App\Models\Progenitor;
-use App\Models\DadosBiografico;
-use App\Models\DadosComplementar;
-use App\Models\Endereco;
-use App\Models\Recrutamento;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -19,8 +15,7 @@ use Inertia\Response;
 class MunicipeController extends Controller
 {
     /**
-     * Lista munícipes com paginação, eager loading completo e filtros profissionais.
-     * Inclui search por nome/BI e filtros por sexo/estado civil.
+     * Lista munícipes com paginação, eager loading completo e filtros.
      */
     public function index(Request $request): Response
     {
@@ -32,10 +27,9 @@ class MunicipeController extends Controller
             'endereco.municipio',
             'pai',
             'mae',
-            'recrutamentos' => fn($q) => $q->latest()->take(3), // últimos 3 recrutamentos (otimização)
+            'recrutamentos' => fn($q) => $q->with('transferencias.municipioDestino')->latest()->take(5),
         ])->latest();
 
-        // Filtros e pesquisa (padrão enterprise para UX)
         if ($search = $request->input('search')) {
             $query->where(function ($q) use ($search) {
                 $q->where('nome_completo', 'like', "%{$search}%")
@@ -61,73 +55,52 @@ class MunicipeController extends Controller
             }
         }
 
-        // Paginação com preservação de filtros na URL
         $municipes = $query->paginate(15)->withQueryString();
 
+        // Estatísticas rápidas para os cards
+        $stats = [
+            'total'       => Municipe::count(),
+            'masculino'   => Municipe::where('sexo', 'M')->count(),
+            'feminino'    => Municipe::where('sexo', 'F')->count(),
+            'com_bi'      => Municipe::whereNotNull('bi_numero')->count(),
+        ];
+
         return Inertia::render('Municipes/Index', [
-            'municipes' => $municipes,
-            'provincias' => Provincia::all(['id', 'nome']),
-            'municipios' => Municipio::with('provincia:id,nome')->get(['id', 'nome', 'id_provincia']),
-            'filters' => $request->only(['search', 'sexo', 'estado_civil', 'has_bi']),
+            'municipes'   => $municipes,
+            'provincias'  => Provincia::orderBy('nome')->get(['id', 'nome']),
+            'municipios'  => Municipio::with('provincia:id,nome')->orderBy('nome')->get(['id', 'nome', 'id_provincia']),
+            'progenitores' => Progenitor::orderBy('nome_completo')->get(['id', 'nome_completo', 'sexo']),
+            'filters'     => $request->only(['search', 'sexo', 'estado_civil', 'has_bi']),
+            'stats'       => $stats,
         ]);
     }
 
     /**
-     * Armazena um novo munícipe + dados relacionados (se enviados).
-     * Usa transação para garantir integridade (padrão senior).
+     * Armazena um novo munícipe. Usa transação para garantir integridade.
      */
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'nome_completo' => 'required|string|max:255',
-            'data_nascimento' => 'required|date|before:today',
-            'sexo' => 'required|in:M,F',
-            'estado_civil' => 'nullable|string|max:50',
-            'naturalidade' => 'nullable|string|max:150',
-            'id_municipio_naturalidade' => 'nullable|exists:municipios,id',
-            'bi_numero' => 'nullable|string|max:50|unique:municipes,bi_numero',
-            'bi_data_emissao' => 'nullable|date|required_with:bi_numero',
-            'bi_data_validade' => 'nullable|date|after_or_equal:bi_data_emissao',
-            'telefone' => 'nullable|string|max:20',
-            'celular' => 'nullable|string|max:20',
-            'id_pai' => 'nullable|exists:progenitores,id',
-            'id_mae' => 'nullable|exists:progenitores,id',
-
-            // Dados relacionados (opcionais no momento do cadastro)
-            'dados_biograficos' => 'nullable|array',
-            'dados_complementares' => 'nullable|array',
-            'endereco' => 'nullable|array',
+            'nome_completo'              => 'required|string|max:255',
+            'data_nascimento'            => 'required|date|before:today',
+            'sexo'                       => 'required|in:M,F',
+            'estado_civil'               => 'nullable|string|max:50',
+            'naturalidade'               => 'nullable|string|max:150',
+            'id_municipio_naturalidade'  => 'nullable|exists:municipios,id',
+            'bi_numero'                  => 'nullable|string|max:50|unique:municipes,bi_numero',
+            'bi_data_emissao'            => 'nullable|date|required_with:bi_numero',
+            'bi_data_validade'           => 'nullable|date|after_or_equal:bi_data_emissao',
+            'telefone'                   => 'nullable|string|max:20',
+            'celular'                    => 'nullable|string|max:20',
+            'id_pai'                     => 'nullable|exists:progenitores,id',
+            'id_mae'                     => 'nullable|exists:progenitores,id',
         ]);
 
-        $municipe = DB::transaction(function () use ($validated) {
-            $municipe = Municipe::create([
+        DB::transaction(function () use ($validated) {
+            Municipe::create([
                 ...$validated,
                 'id_user' => Auth::id(),
             ]);
-
-            // Cria dados relacionados se fornecidos (updateOrCreate evita duplicados)
-            if (!empty($validated['dados_biograficos'])) {
-                $municipe->dadosBiograficos()->updateOrCreate(
-                    ['id_municipe' => $municipe->id],
-                    $validated['dados_biograficos']
-                );
-            }
-
-            if (!empty($validated['dados_complementares'])) {
-                $municipe->dadosComplementares()->updateOrCreate(
-                    ['id_municipe' => $municipe->id],
-                    $validated['dados_complementares']
-                );
-            }
-
-            if (!empty($validated['endereco'])) {
-                $municipe->endereco()->updateOrCreate(
-                    ['id_municipe' => $municipe->id],
-                    $validated['endereco']
-                );
-            }
-
-            return $municipe;
         });
 
         return redirect()
@@ -141,19 +114,19 @@ class MunicipeController extends Controller
     public function update(Request $request, Municipe $municipe)
     {
         $validated = $request->validate([
-            'nome_completo' => 'required|string|max:255',
-            'data_nascimento' => 'required|date|before:today',
-            'sexo' => 'required|in:M,F',
-            'estado_civil' => 'nullable|string|max:50',
-            'naturalidade' => 'nullable|string|max:150',
-            'id_municipio_naturalidade' => 'nullable|exists:municipios,id',
-            'bi_numero' => 'nullable|string|max:50|unique:municipes,bi_numero,' . $municipe->id,
-            'bi_data_emissao' => 'nullable|date|required_with:bi_numero',
-            'bi_data_validade' => 'nullable|date|after_or_equal:bi_data_emissao',
-            'telefone' => 'nullable|string|max:20',
-            'celular' => 'nullable|string|max:20',
-            'id_pai' => 'nullable|exists:progenitores,id',
-            'id_mae' => 'nullable|exists:progenitores,id',
+            'nome_completo'              => 'required|string|max:255',
+            'data_nascimento'            => 'required|date|before:today',
+            'sexo'                       => 'required|in:M,F',
+            'estado_civil'               => 'nullable|string|max:50',
+            'naturalidade'               => 'nullable|string|max:150',
+            'id_municipio_naturalidade'  => 'nullable|exists:municipios,id',
+            'bi_numero'                  => 'nullable|string|max:50|unique:municipes,bi_numero,' . $municipe->id,
+            'bi_data_emissao'            => 'nullable|date|required_with:bi_numero',
+            'bi_data_validade'           => 'nullable|date|after_or_equal:bi_data_emissao',
+            'telefone'                   => 'nullable|string|max:20',
+            'celular'                    => 'nullable|string|max:20',
+            'id_pai'                     => 'nullable|exists:progenitores,id',
+            'id_mae'                     => 'nullable|exists:progenitores,id',
         ]);
 
         $municipe->update($validated);
@@ -164,7 +137,7 @@ class MunicipeController extends Controller
     }
 
     /**
-     * Remove um munícipe (cascade deleta dados relacionados via FK).
+     * Remove um munícipe (cascade elimina dados relacionados via FK).
      */
     public function destroy(Municipe $municipe)
     {
@@ -175,24 +148,26 @@ class MunicipeController extends Controller
             ->with('success', 'Munícipe removido com sucesso!');
     }
 
-    // ==================== MÉTODOS PARA DADOS RELACIONADOS (usados via Modal no frontend) ====================
+    // ============================================================
+    // DADOS RELACIONADOS — chamados via modais no frontend
+    // ============================================================
 
     public function storeBiografico(Request $request, Municipe $municipe)
     {
         $validated = $request->validate([
-            'nip' => 'nullable|string|max:50',
-            'assento_numero' => 'nullable|string|max:50',
-            'registro_civil' => 'nullable|string|max:50',
-            'registro_numero' => 'nullable|string|max:50',
-            'cedula_numero' => 'nullable|string|max:50',
-            'numero_filhos' => 'nullable|integer|min:0',
-            'vencimento' => 'nullable|numeric|min:0',
-            'ramo_actividade' => 'nullable|string|max:100',
-            'ramo' => 'nullable|string|max:100',
+            'nip'              => 'nullable|string|max:50',
+            'assento_numero'   => 'nullable|string|max:50',
+            'registro_civil'   => 'nullable|string|max:50',
+            'registro_numero'  => 'nullable|string|max:50',
+            'cedula_numero'    => 'nullable|string|max:50',
+            'numero_filhos'    => 'nullable|integer|min:0',
+            'vencimento'       => 'nullable|numeric|min:0',
+            'ramo_actividade'  => 'nullable|string|max:100',
+            'ramo'             => 'nullable|string|max:100',
             'ano_incorporacao' => 'nullable|integer|min:1900|max:' . (date('Y') + 1),
-            'ano_abandono' => 'nullable|integer|min:1900|max:' . (date('Y') + 1),
-            'ano_servico' => 'nullable|integer|min:0',
-            'modo_vida' => 'nullable|string|max:100',
+            'ano_abandono'     => 'nullable|integer|min:1900|max:' . (date('Y') + 1),
+            'ano_servico'      => 'nullable|integer|min:0',
+            'modo_vida'        => 'nullable|string|max:100',
         ]);
 
         $municipe->dadosBiograficos()->updateOrCreate(
@@ -206,17 +181,17 @@ class MunicipeController extends Controller
     public function storeComplementar(Request $request, Municipe $municipe)
     {
         $validated = $request->validate([
-            'caixa_postal' => 'nullable|string|max:20',
-            'nif' => 'nullable|string|max:30',
-            'encargo_familiar' => 'nullable|integer|min:0',
+            'caixa_postal'          => 'nullable|string|max:20',
+            'nif'                   => 'nullable|string|max:30',
+            'encargo_familiar'      => 'nullable|integer|min:0',
             'habilitacao_literaria' => 'nullable|string|max:100',
-            'profissao' => 'nullable|string|max:100',
-            'numero_irmaos' => 'nullable|integer|min:0',
-            'entidade_emissora_bi' => 'nullable|string|max:100',
+            'profissao'             => 'nullable|string|max:100',
+            'numero_irmaos'         => 'nullable|integer|min:0',
+            'entidade_emissora_bi'  => 'nullable|string|max:100',
             'numero_carta_conducao' => 'nullable|string|max:50',
-            'data_emissao_carta' => 'nullable|date',
-            'data_validade_carta' => 'nullable|date|after_or_equal:data_emissao_carta',
-            'atributo' => 'nullable|string|max:100',
+            'data_emissao_carta'    => 'nullable|date',
+            'data_validade_carta'   => 'nullable|date|after_or_equal:data_emissao_carta',
+            'atributo'              => 'nullable|string|max:100',
         ]);
 
         $municipe->dadosComplementares()->updateOrCreate(
@@ -230,11 +205,11 @@ class MunicipeController extends Controller
     public function storeEndereco(Request $request, Municipe $municipe)
     {
         $validated = $request->validate([
-            'comuna' => 'nullable|string|max:150',
+            'morada'       => 'nullable|string|max:255',
+            'localidade'   => 'nullable|string|max:150',
+            'comuna'       => 'nullable|string|max:150',
             'id_provincia' => 'nullable|exists:provincias,id',
             'id_municipio' => 'nullable|exists:municipios,id',
-            'localidade' => 'nullable|string|max:150',
-            'morada' => 'nullable|string|max:255',
         ]);
 
         $municipe->endereco()->updateOrCreate(
@@ -249,12 +224,50 @@ class MunicipeController extends Controller
     {
         $validated = $request->validate([
             'data_recruta' => 'required|date|before_or_equal:today',
-            'observacoes' => 'nullable|string|max:1000',
-            'estado' => 'required|integer|in:0,1,2',
+            'observacoes'  => 'nullable|string|max:1000',
+            'estado'       => 'required|integer|in:0,1,2',
         ]);
 
         $municipe->recrutamentos()->create($validated);
 
         return back()->with('success', 'Recrutamento registado com sucesso!');
+    }
+
+    /**
+     * Atualiza o estado de um recrutamento (aprovar / rejeitar).
+     */
+    public function updateRecrutamento(Request $request, Municipe $municipe, $recrutamentoId)
+    {
+        $validated = $request->validate([
+            'estado'      => 'required|integer|in:0,1,2',
+            'observacoes' => 'nullable|string|max:1000',
+        ]);
+
+        $municipe->recrutamentos()->findOrFail($recrutamentoId)->update($validated);
+
+        return back()->with('success', 'Recrutamento atualizado com sucesso!');
+    }
+
+    /**
+     * Regista uma transferência associada a um recrutamento.
+     */
+    public function storeTransferencia(Request $request, Municipe $municipe, $recrutamentoId)
+    {
+        $recrutamento = $municipe->recrutamentos()->findOrFail($recrutamentoId);
+
+        $validated = $request->validate([
+            'data_solicitacao'     => 'required|date|before_or_equal:today',
+            'id_municipio_destino' => 'nullable|exists:municipios,id',
+            'local_destino'        => 'nullable|string|max:255',
+            'estado'               => 'required|integer|in:0,1,2',
+        ]);
+
+        $recrutamento->transferencias()->create([
+            ...$validated,
+            'id_user_aprovou' => $validated['estado'] == 1 ? Auth::id() : null,
+            'data_aprovacao'  => $validated['estado'] == 1 ? now()->toDateString() : null,
+        ]);
+
+        return back()->with('success', 'Transferência registada com sucesso!');
     }
 }

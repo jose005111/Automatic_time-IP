@@ -14,7 +14,8 @@ class ProvinciaController extends Controller
 {
     $provincias = Provincia::withCount('municipios')
         ->orderBy('nome')
-        ->get();
+        ->paginate(10)
+        ->withQueryString();
 
     $municipiosQuery = Municipio::with('provincia');
 
@@ -28,7 +29,7 @@ class ProvinciaController extends Controller
 
     $municipios = $municipiosQuery
         ->orderBy('nome')
-        ->paginate(5)
+        ->paginate(10)
         ->withQueryString();
 
     return Inertia::render('Localizacoes/Index', [

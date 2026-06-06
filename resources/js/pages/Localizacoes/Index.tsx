@@ -263,8 +263,8 @@ export default function LocalizacoesIndex({
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {provincias.length > 0 ? (
-                                        provincias.map((prov) => (
+                                    {provincias.data.length > 0 ? (
+                                        provincias.data.map((prov) => (
                                             <TableRow key={prov.id}>
                                                 <TableCell className="font-medium">
                                                     {prov.nome}
@@ -314,6 +314,34 @@ export default function LocalizacoesIndex({
                                 </TableBody>
                             </Table>
                         </div>
+                        {/* Paginação Municípios */}
+                        {provincias.last_page > 1 && (
+                            <div className="mt-4 flex items-center justify-between">
+                                <p className="text-sm text-muted-foreground">
+                                    Mostrando {provincias.data.length} de{' '}
+                                    {provincias.total} provincias
+                                </p>
+                                <div className="flex gap-2">
+                                    {provincias.current_page > 1 && (
+                                        <Link
+                                            href={`/localizacoes?page=${provincias.current_page - 1}`}
+                                            className="inline-flex h-9 items-center justify-center rounded-md border px-4 text-sm"
+                                        >
+                                            Anterior
+                                        </Link>
+                                    )}
+                                    {provincias.current_page <
+                                        provincias.last_page && (
+                                        <Link
+                                            href={`/localizacoes?page=${provincias.current_page + 1}`}
+                                            className="inline-flex h-9 items-center justify-center rounded-md border px-4 text-sm"
+                                        >
+                                            Próximo
+                                        </Link>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                     </TabsContent>
 
                     {/* ==================== MUNICÍPIOS (com paginação e filtros) ==================== */}
@@ -345,7 +373,7 @@ export default function LocalizacoesIndex({
                                         <SelectItem value="all">
                                             Todas as províncias
                                         </SelectItem>
-                                        {provincias.map((p) => (
+                                        {provincias.data.map((p) => (
                                             <SelectItem
                                                 key={p.id}
                                                 value={p.id.toString()}

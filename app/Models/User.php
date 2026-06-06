@@ -22,7 +22,31 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'role',
     ];
+
+    // App/Models/User.php
+
+public function isAdmin(): bool
+{
+    return $this->role === 'admin';
+}
+
+public function isCustom(): bool
+{
+    return $this->role === 'custom';
+}
+
+// Scopes úteis
+public function scopeAdmins($query)
+{
+    return $query->where('role', 'admin');
+}
+
+public function scopeCustoms($query)
+{
+    return $query->where('role', 'custom');
+}
 
     /**
      * The attributes that should be hidden for serialization.

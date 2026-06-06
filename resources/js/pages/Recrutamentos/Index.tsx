@@ -43,6 +43,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Plus, Edit, Trash2, Search, X } from 'lucide-react';
 import { type BreadcrumbItem } from '@/types';
+import MunicipeBox from '@/components/component/MunicipeBox';
 
 interface Municipe {
     id: number;
@@ -502,28 +503,12 @@ export default function RecrutamentosIndex({
                                 render={({ field }) => (
                                     <FormItem>
                                         <FormLabel>Munícipe *</FormLabel>
-                                        <Select
-                                            onValueChange={field.onChange}
-                                            value={field.value?.toString()}
-                                        >
-                                            <FormControl>
-                                                <SelectTrigger>
-                                                    <SelectValue placeholder="Selecione o munícipe" />
-                                                </SelectTrigger>
-                                            </FormControl>
-                                            <SelectContent>
-                                                {municipes.map((m) => (
-                                                    <SelectItem
-                                                        key={m.id}
-                                                        value={m.id.toString()}
-                                                    >
-                                                        {m.nome_completo}{' '}
-                                                        {m.bi_numero &&
-                                                            `(${m.bi_numero})`}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
+
+                                        <MunicipeBox
+                                            value={field.value}
+                                            onChange={field.onChange}
+                                            listas={municipes}
+                                        />
                                         <FormMessage />
                                     </FormItem>
                                 )}

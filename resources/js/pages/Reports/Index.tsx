@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 import {
     BarChart,
@@ -15,7 +15,6 @@ import {
     Line,
     Legend,
 } from 'recharts';
-
 import AppLayout from '@/layouts/app-layout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -36,7 +35,12 @@ import {
     Clock,
 } from 'lucide-react';
 import { type BreadcrumbItem } from '@/types';
+import generateRelatorioEstatisticasPDF from '@/lib/pdf/generateRelatorioEstatisticasPDF';
 
+interface Municipio {
+    id: number;
+    nome: string;
+}
 interface Kpi {
     total_municipes: number;
     recrutamentos_pendentes: number;
@@ -44,7 +48,6 @@ interface Kpi {
     transferencias_pendentes: number;
     municipes_com_bi_valido: number;
 }
-
 interface ChartData {
     mes?: string;
     total?: number;
@@ -53,7 +56,6 @@ interface ChartData {
     municipio?: string;
     cadastros?: number;
 }
-
 interface Props {
     kpis: Kpi;
     recrutamentosPorMes: ChartData[];
@@ -61,12 +63,8 @@ interface Props {
     porEstadoRecrutamento: ChartData[];
     topMunicipios: ChartData[];
     cadastrosPorMes: ChartData[];
-    provincias: { id: number; nome: string }[];
-    filters: {
-        start_date?: string;
-        end_date?: string;
-        provincia_id?: string;
-    };
+    Municipios: Municipio[];
+    filters: { start_date?: string; end_date?: string; municipio_id?: string };
 }
 
 const COLORS = [
@@ -85,7 +83,7 @@ export default function ReportsIndex({
     porEstadoRecrutamento,
     topMunicipios,
     cadastrosPorMes,
-    provincias,
+    Municipios,
     filters,
 }: Props) {
     const breadcrumbs: BreadcrumbItem[] = [
@@ -93,19 +91,30 @@ export default function ReportsIndex({
         { title: 'Relatórios', href: '/reports' },
     ];
 
-    const handleFilter = (e: React.FormEvent<HTMLFormElement>) => {
+    // ✅ Estado controlado para os filtros
+    const [startDate, setStartDate] = useState(filters.start_date ?? '');
+    const [endDate, setEndDate] = useState(filters.end_date ?? '');
+    const [municipioId, setMunicipioId] = useState(
+        filters.municipio_id ?? 'all',
+    );
+
+    const handleFilter = (e: React.FormEvent) => {
         e.preventDefault();
-        const formData = new FormData(e.currentTarget);
-        router.get('/reports', Object.fromEntries(formData), {
-            preserveState: true,
-        });
+        router.get(
+            '/reports',
+            {
+                start_date: startDate || undefined,
+                end_date: endDate || undefined,
+                municipio_id: municipioId !== 'all' ? municipioId : undefined,
+            },
+            { preserveState: true },
+        );
     };
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Relatórios e Estatísticas - SIGID" />
-
-            <div className="flex h-full flex-1 flex-col gap-6 p-6">
+            <div className="flex h-[calc(100vh-8rem)] flex-col gap-6 p-6">
                 {/* Header */}
                 <div className="flex items-center justify-between">
                     <div>
@@ -113,10 +122,31 @@ export default function ReportsIndex({
                             Relatórios e Estatísticas
                         </h1>
                         <p className="text-muted-foreground">
-                            Análise avançada de dados do SIGID - DMRMAB Benguela
+                            Análise avançada de dados do SIGID — DMRMAB Benguela
                         </p>
                     </div>
-                    <Button variant="outline" className="gap-2">
+                    <Button
+                        variant="outline"
+                        className="gap-2"
+                        onClick={() =>
+                            generateRelatorioEstatisticasPDF({
+                                kpis,
+                                recrutamentosPorMes,
+                                porSexo,
+                                porEstadoRecrutamento,
+                                topMunicipios,
+                                cadastrosPorMes,
+                                filters: {
+                                    ...filters,
+                                    municipio_nome: Municipios.find(
+                                        (p) =>
+                                            p.id.toString() ===
+                                            filters.municipio_id,
+                                    )?.nome,
+                                },
+                            })
+                        }
+                    >
                         <Download className="h-4 w-4" /> Exportar PDF
                     </Button>
                 </div>
@@ -134,8 +164,10 @@ export default function ReportsIndex({
                                 </label>
                                 <Input
                                     type="date"
-                                    name="start_date"
-                                    defaultValue={filters.start_date}
+                                    value={startDate}
+                                    onChange={(e) =>
+                                        setStartDate(e.target.value)
+                                    }
                                     className="mt-1"
                                 />
                             </div>
@@ -145,32 +177,33 @@ export default function ReportsIndex({
                                 </label>
                                 <Input
                                     type="date"
-                                    name="end_date"
-                                    defaultValue={filters.end_date}
+                                    value={endDate}
+                                    onChange={(e) => setEndDate(e.target.value)}
                                     className="mt-1"
                                 />
                             </div>
                             <div>
                                 <label className="text-sm font-medium">
-                                    Província
+                                    Municípios de Benguela
                                 </label>
+                                {/* ✅ Select controlado via estado — não depende de FormData */}
                                 <Select
-                                    name="provincia_id"
-                                    defaultValue={filters.provincia_id || 'all'}
+                                    value={municipioId}
+                                    onValueChange={setMunicipioId}
                                 >
                                     <SelectTrigger className="mt-1 w-[200px]">
-                                        <SelectValue placeholder="Todas" />
+                                        <SelectValue placeholder="Todos os Municípios" />
                                     </SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="all">
-                                            Todas as Províncias
+                                            Todos os Municípios
                                         </SelectItem>
-                                        {provincias.map((p) => (
+                                        {Municipios.map((m) => (
                                             <SelectItem
-                                                key={p.id}
-                                                value={p.id.toString()}
+                                                key={m.id}
+                                                value={m.id.toString()}
                                             >
-                                                {p.nome}
+                                                {m.nome}
                                             </SelectItem>
                                         ))}
                                     </SelectContent>
@@ -183,7 +216,7 @@ export default function ReportsIndex({
                     </CardContent>
                 </Card>
 
-                {/* KPIs */}
+                {/* KPIs — inalterados, só copiados */}
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -252,9 +285,8 @@ export default function ReportsIndex({
                     </Card>
                 </div>
 
-                {/* Charts Grid */}
+                {/* Charts — inalterados */}
                 <div className="grid gap-6 lg:grid-cols-2">
-                    {/* Recrutamentos por Mês */}
                     <Card>
                         <CardHeader>
                             <CardTitle>Recrutamentos por Mês</CardTitle>
@@ -275,8 +307,6 @@ export default function ReportsIndex({
                             </ResponsiveContainer>
                         </CardContent>
                     </Card>
-
-                    {/* Distribuição por Sexo */}
                     <Card>
                         <CardHeader>
                             <CardTitle>Distribuição por Sexo</CardTitle>
@@ -294,14 +324,10 @@ export default function ReportsIndex({
                                         nameKey="name"
                                         label
                                     >
-                                        {porSexo.map((entry, index) => (
+                                        {porSexo.map((_, i) => (
                                             <Cell
-                                                key={`cell-${index}`}
-                                                fill={
-                                                    COLORS[
-                                                        index % COLORS.length
-                                                    ]
-                                                }
+                                                key={i}
+                                                fill={COLORS[i % COLORS.length]}
                                             />
                                         ))}
                                     </Pie>
@@ -311,8 +337,6 @@ export default function ReportsIndex({
                             </ResponsiveContainer>
                         </CardContent>
                     </Card>
-
-                    {/* Estado dos Recrutamentos */}
                     <Card>
                         <CardHeader>
                             <CardTitle>Estado dos Recrutamentos</CardTitle>
@@ -329,19 +353,12 @@ export default function ReportsIndex({
                                         nameKey="name"
                                         label
                                     >
-                                        {porEstadoRecrutamento.map(
-                                            (entry, index) => (
-                                                <Cell
-                                                    key={`cell-${index}`}
-                                                    fill={
-                                                        COLORS[
-                                                            index %
-                                                                COLORS.length
-                                                        ]
-                                                    }
-                                                />
-                                            ),
-                                        )}
+                                        {porEstadoRecrutamento.map((_, i) => (
+                                            <Cell
+                                                key={i}
+                                                fill={COLORS[i % COLORS.length]}
+                                            />
+                                        ))}
                                     </Pie>
                                     <Tooltip />
                                     <Legend />
@@ -349,8 +366,6 @@ export default function ReportsIndex({
                             </ResponsiveContainer>
                         </CardContent>
                     </Card>
-
-                    {/* Top Municípios */}
                     <Card>
                         <CardHeader>
                             <CardTitle>
@@ -377,34 +392,6 @@ export default function ReportsIndex({
                                         radius={4}
                                     />
                                 </BarChart>
-                            </ResponsiveContainer>
-                        </CardContent>
-                    </Card>
-
-                    {/* Evolução de Cadastros */}
-                    <Card className="lg:col-span-2">
-                        <CardHeader>
-                            <CardTitle>
-                                Evolução de Cadastros de Munícipes (Últimos 12
-                                meses)
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="h-[320px]">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <LineChart data={cadastrosPorMes}>
-                                    <CartesianGrid strokeDasharray="3 3" />
-                                    <XAxis dataKey="mes" />
-                                    <YAxis />
-                                    <Tooltip />
-                                    <Legend />
-                                    <Line
-                                        type="monotone"
-                                        dataKey="cadastros"
-                                        stroke="#8884d8"
-                                        strokeWidth={3}
-                                        dot={{ r: 4 }}
-                                    />
-                                </LineChart>
                             </ResponsiveContainer>
                         </CardContent>
                     </Card>

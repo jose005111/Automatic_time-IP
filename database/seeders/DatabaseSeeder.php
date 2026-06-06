@@ -13,6 +13,7 @@ class DatabaseSeeder extends Seeder
             MunicipioSeeder::class,
             ProgenitorSeeder::class,
             MunicipeSeeder::class,
+            UserSeeder::class,
         ]);
 
         $this->command->info('✅ Seeders executados com sucesso! Dados de Benguela carregados.');

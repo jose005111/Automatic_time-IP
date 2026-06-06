@@ -9,26 +9,23 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Recrutamento extends Model
 {
-    use HasFactory;
-
-    protected $fillable = [
-        'id_municipe',
-        'data_recruta',
-        'observacoes',
-        'estado',
-    ];
-
+    protected $table = 'recrutamentos';
+ 
+    protected $fillable = ['id_municipe', 'data_recruta', 'observacoes', 'estado'];
+ 
     protected $casts = [
         'data_recruta' => 'date',
+        'estado'       => 'integer',
     ];
-
+ 
     public function municipe(): BelongsTo
     {
         return $this->belongsTo(Municipe::class, 'id_municipe');
     }
-
-    public function transferencia(): HasOne
+ 
+    public function transferencias()
     {
-        return $this->hasOne(Transferencia::class, 'id_recrutamento');
+        return $this->hasMany(Transferencia::class, 'id_recrutamento');
     }
 }
+ 

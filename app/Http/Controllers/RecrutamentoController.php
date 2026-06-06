@@ -17,7 +17,7 @@ class RecrutamentoController extends Controller
      */
     public function index(Request $request): Response
     {
-        $query = Recrutamento::with(['municipe.municipioNaturalidade.provincia', 'transferencia'])
+        $query = Recrutamento::with(['municipe.municipioNaturalidade.provincia', 'transferencias'])
             ->latest('data_recruta');
 
         // Filtros profissionais
@@ -28,9 +28,9 @@ class RecrutamentoController extends Controller
             });
         }
 
-        if ($estado = $request->input('estado')) {
-            $query->where('estado', $estado);
-        }
+    if ($request->has('estado')) {
+    $query->where('estado', '=', $request->input('estado'));
+}
 
         // Filtro por mês/ano (útil para relatórios de recenseamento)
         if ($mes = $request->input('mes')) {
@@ -40,10 +40,10 @@ class RecrutamentoController extends Controller
             $query->whereYear('data_recruta', $ano);
         }
 
-        // Default: últimos 3 meses se nenhum filtro de data (boa prática UX)
-        if (!$request->hasAny(['mes', 'ano', 'search', 'estado'])) {
-            $query->where('data_recruta', '>=', now()->subMonths(3));
-        }
+        // // Default: últimos 3 meses se nenhum filtro de data (boa prática UX)
+        // if (!$request->hasAny(['mes', 'ano', 'search', 'estado'])) {
+        //     $query->where('data_recruta', '>=', now()->subMonths(3));
+        // }
 
         $recrutamentos = $query->paginate(15)->withQueryString();
 
@@ -72,6 +72,16 @@ class RecrutamentoController extends Controller
             'observacoes' => 'nullable|string|max:2000',
             'estado' => 'required|integer|in:0,1,2',
         ]);
+
+        $exist = Recrutamento::where('id_municipe', $validated['id_municipe'])
+            ->where('estado', '!=', 2) // Ignora recrutamentos cancelados
+            ->exists();
+
+        if ($exist) {
+            return redirect()
+                ->back()
+                ->with('error', 'Este munícipe já está registrado como recrutado.');
+        }
 
         Recrutamento::create($validated);
 

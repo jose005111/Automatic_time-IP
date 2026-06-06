@@ -9,11 +9,8 @@ import logo from '@/assets/logo.png';
 
 // IMPORTAR AS IMAGENS DE FUNDO (coloca as tuas imagens reais em resources/js/assets/background/)
 // Exemplo: back_1.jpeg, back_2.jpeg, back_3.jpeg (podes usar fotos de Benguela, cartões de munícipe, etc.)
-import bg1 from '@/assets/background/back_1.jpeg';
-import bg2 from '@/assets/background/back_2.jpeg';
-import bg3 from '@/assets/background/back_3.jpeg';
-
-const BACKGROUNDS = [bg1, bg2, bg3];
+import bg1 from '@/assets/background/back_1.png';
+const BACKGROUNDS = [bg1];
 
 export default function Welcome({
     canRegister = true,
@@ -38,7 +35,7 @@ export default function Welcome({
 
             <div className="flex min-h-screen flex-col items-center bg-[#FDFDFC] p-6 text-[#1b1b18] lg:justify-center lg:p-8 dark:bg-[#0a0a0a]">
                 {/* Cabeçalho / Navegação */}
-                <header className="mb-6 w-full max-w-[335px] text-sm not-has-[nav]:hidden lg:max-w-4xl">
+                <header className="lg:max-w-8xl mb-6 w-full text-sm not-has-[nav]:hidden">
                     <nav className="flex items-center justify-between">
                         <div className="flex items-center gap-3 font-semibold text-primary">
                             <img
@@ -52,15 +49,7 @@ export default function Welcome({
                         </div>
 
                         <div className="flex items-center gap-2">
-                            <Link
-                                href="/portal"
-                                className="inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium text-blue-600 transition hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/20"
-                            >
-                                <Search className="h-4 w-4" />
-                                Consultar Munícipe
-                            </Link>
-
-                            {auth.user ? (
+                            {auth?.user ? (
                                 <Link
                                     href={dashboard()}
                                     className="inline-block rounded-md border border-[#19140035] bg-blue-600 px-5 py-2 text-sm font-medium text-white transition hover:bg-blue-700 dark:border-transparent"
@@ -71,18 +60,18 @@ export default function Welcome({
                                 <>
                                     <Link
                                         href={login()}
-                                        className="inline-block rounded-md px-5 py-2 text-sm font-medium text-[#1b1b18] transition hover:bg-gray-100 dark:text-[#EDEDEC] dark:hover:bg-gray-800"
+                                        className="inline-block rounded-md bg-blue-600 px-5 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700"
                                     >
                                         Entrar
                                     </Link>
-                                    {canRegister && (
+                                    {/* {canRegister && (
                                         <Link
                                             href={register()}
                                             className="inline-block rounded-md bg-blue-600 px-5 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700"
                                         >
                                             Cadastrar
                                         </Link>
-                                    )}
+                                    )} */}
                                 </>
                             )}
                         </div>
@@ -90,7 +79,7 @@ export default function Welcome({
                 </header>
 
                 <div className="flex w-full items-center justify-center opacity-100 transition-opacity duration-700 lg:grow starting:opacity-0">
-                    <main className="flex w-full max-w-[335px] flex-col-reverse overflow-hidden rounded-2xl border shadow-2xl lg:max-w-4xl lg:flex-row dark:border-gray-800">
+                    <main className="lg:max-w-8xl flex w-full flex-col-reverse overflow-hidden rounded-2xl border shadow-2xl lg:flex-row dark:border-gray-800">
                         {/* Lado Esquerdo - Informações do SIGID */}
                         <div className="flex flex-1 flex-col justify-center bg-white p-6 pb-12 lg:p-16 dark:bg-[#161615] dark:text-[#EDEDEC]">
                             <div className="mb-6 inline-flex w-fit items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
@@ -102,15 +91,14 @@ export default function Welcome({
                             </h1>
 
                             <p className="mb-8 text-base leading-relaxed text-slate-600 dark:text-slate-400">
-                                Recrutamento militar, emissão de cartões de
-                                munícipe, transferências e controlo de
-                                informações com total segurança e eficiência.
+                                Recrutamento militar, transferências e controlo
+                                de informações com total segurança e eficiência.
                                 Modernização administrativa da DMRMAB.
                             </p>
 
                             <div className="mb-10 flex items-center gap-4 border-b border-slate-100 pb-8 dark:border-slate-800">
                                 <Link
-                                    href={auth.user ? dashboard() : login()}
+                                    href={auth?.user ? dashboard() : login()}
                                     className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-6 py-3.5 text-sm font-bold text-white shadow-md transition-all hover:bg-blue-600 hover:shadow-lg sm:w-auto dark:bg-white dark:text-slate-900 dark:hover:bg-blue-500 dark:hover:text-white"
                                 >
                                     <Users className="h-4 w-4" />

@@ -53,6 +53,11 @@ const mainNavItems: NavItem[] = [
         href: '/relatorios',
         icon: FileText,
     },
+    {
+        title: 'Utilizadores',
+        href: '/utilizadores',
+        icon: Users,
+    },
 ];
 
 export function AppSidebar() {

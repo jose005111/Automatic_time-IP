@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { Head, Link, router, usePage } from '@inertiajs/react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Head, router } from '@inertiajs/react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { format } from 'date-fns';
-import { pt } from 'date-fns/locale';
 
 import AppLayout from '@/layouts/app-layout';
 import { Button } from '@/components/ui/button';
@@ -25,6 +24,7 @@ import {
     FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
     Select,
     SelectContent,
@@ -42,16 +42,24 @@ import {
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardHeader,
-    CardTitle,
-} from '@/components/ui/card';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { Skeleton } from '@/components/ui/skeleton';
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
     Plus,
     Edit,
@@ -65,46 +73,43 @@ import {
     FileText,
     CreditCard,
     Phone,
-    Mail,
     Home,
     Users,
     Briefcase,
-    GraduationCap,
     Heart,
     AlertCircle,
     CheckCircle,
     Clock,
     Filter,
-    Download,
-    Upload,
-    Printer,
-    MoreVertical,
     ChevronLeft,
     ChevronRight,
     Loader2,
+    ArrowRightLeft,
+    UserCheck,
+    UserX,
+    Download,
+    FileDown,
 } from 'lucide-react';
 import { type BreadcrumbItem } from '@/types';
+import generateFichaMunicipePDF from './../../lib/pdf/generateFichaMunicipePDF';
+// ...
+// ─── TIPOS ────────────────────────────────────────────────────────────────────
 
-// Types completos baseados no banco de dados
 interface Provincia {
     id: number;
     nome: string;
 }
-
 interface Municipio {
     id: number;
     nome: string;
     id_provincia: number;
     provincia?: Provincia;
 }
-
 interface Progenitor {
     id: number;
     nome_completo: string;
-    data_nascimento?: string;
-    naturalidade?: string;
-    profissao?: string;
     sexo?: string;
+    profissao?: string;
 }
 
 interface DadosBiografico {
@@ -123,7 +128,6 @@ interface DadosBiografico {
     ano_servico?: number;
     modo_vida?: string;
 }
-
 interface DadosComplementar {
     id?: number;
     caixa_postal?: string;
@@ -138,7 +142,6 @@ interface DadosComplementar {
     data_validade_carta?: string;
     atributo?: string;
 }
-
 interface Endereco {
     id?: number;
     morada?: string;
@@ -149,15 +152,22 @@ interface Endereco {
     provincia?: Provincia;
     municipio?: Municipio;
 }
-
+interface Transferencia {
+    id: number;
+    data_solicitacao: string;
+    local_destino?: string;
+    estado: number;
+    data_aprovacao?: string;
+    municipio_destino?: Municipio;
+}
 interface Recrutamento {
     id: number;
     data_recruta: string;
     estado: number;
     observacoes?: string;
     created_at?: string;
+    transferencias?: Transferencia[];
 }
-
 interface Municipe {
     id: number;
     nome_completo: string;
@@ -181,14 +191,12 @@ interface Municipe {
     endereco?: Endereco;
     recrutamentos?: Recrutamento[];
 }
-
-interface Filters {
-    search?: string;
-    sexo?: string;
-    estado_civil?: string;
-    has_bi?: string;
+interface Stats {
+    total: number;
+    masculino: number;
+    feminino: number;
+    com_bi: number;
 }
-
 interface Props {
     municipes: {
         data: Municipe[];
@@ -199,13 +207,21 @@ interface Props {
     };
     provincias: Provincia[];
     municipios: Municipio[];
-    filters: Filters;
+    progenitores: Progenitor[];
+    filters: {
+        search?: string;
+        sexo?: string;
+        estado_civil?: string;
+        has_bi?: string;
+    };
+    stats: Stats;
 }
 
-// Schemas de validação completos
-const formSchema = z.object({
-    nome_completo: z.string().min(3, 'Nome completo é obrigatório'),
-    data_nascimento: z.string().min(1, 'Data de nascimento é obrigatória'),
+// ─── SCHEMAS ──────────────────────────────────────────────────────────────────
+
+const municipeSchema = z.object({
+    nome_completo: z.string().min(3, 'Mínimo 3 caracteres'),
+    data_nascimento: z.string().min(1, 'Obrigatório'),
     sexo: z.enum(['M', 'F']),
     estado_civil: z.string().optional(),
     naturalidade: z.string().optional(),
@@ -266,418 +282,416 @@ const enderecoSchema = z.object({
 });
 
 const recrutamentoSchema = z.object({
-    data_recruta: z.string().min(1, 'Data é obrigatória'),
+    data_recruta: z.string().min(1, 'Obrigatório'),
+    estado: z.coerce.number().min(0).max(2),
     observacoes: z.string().optional(),
+});
+
+const transferenciaSchema = z.object({
+    data_solicitacao: z.string().min(1, 'Obrigatório'),
+    id_municipio_destino: z.coerce.number().optional(),
+    local_destino: z.string().optional(),
     estado: z.coerce.number().min(0).max(2),
 });
 
-// Componente de Estatísticas
-const StatsCards = ({ total }: { total: number }) => {
+const progenitorSchema = z.object({
+    nome_completo: z.string().min(3, 'Mínimo 3 caracteres'),
+    data_nascimento: z.string().optional(),
+    naturalidade: z.string().optional(),
+    profissao: z.string().optional(),
+    sexo: z.enum(['M', 'F']).optional(),
+});
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+
+const calcularIdade = (dataNascimento: string) => {
+    const hoje = new Date();
+    const nasc = new Date(dataNascimento);
+    let idade = hoje.getFullYear() - nasc.getFullYear();
+    if (
+        hoje.getMonth() - nasc.getMonth() < 0 ||
+        (hoje.getMonth() === nasc.getMonth() && hoje.getDate() < nasc.getDate())
+    )
+        idade--;
+    return idade;
+};
+
+const formatDate = (d?: string) =>
+    d ? format(new Date(d), 'dd/MM/yyyy') : '—';
+
+/** Verifica se um munícipe tem recrutamento aprovado (bloqueia novo recrutamento) */
+const temRecrutamentoAprovado = (m: Municipe) =>
+    (m.recrutamentos || []).some((r) => r.estado === 1);
+
+// ─── COMPONENTES BASE ─────────────────────────────────────────────────────────
+
+const EstadoBadge = ({ estado }: { estado: number }) => {
+    if (estado === 1)
+        return (
+            <Badge className="gap-1 bg-emerald-500 text-white hover:bg-emerald-600">
+                <CheckCircle className="h-3 w-3" />
+                Aprovado
+            </Badge>
+        );
+    if (estado === 2)
+        return (
+            <Badge variant="destructive" className="gap-1">
+                <AlertCircle className="h-3 w-3" />
+                Rejeitado
+            </Badge>
+        );
     return (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">
-                        Total de Munícipes
-                    </CardTitle>
-                    <Users className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                    <div className="text-2xl font-bold">{total}</div>
-                    <p className="text-xs text-muted-foreground">
-                        Cadastrados no sistema
-                    </p>
-                </CardContent>
-            </Card>
-            <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">
-                        Homens
-                    </CardTitle>
-                    <User className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                    <div className="text-2xl font-bold">—</div>
-                    <p className="text-xs text-muted-foreground">
-                        População masculina
-                    </p>
-                </CardContent>
-            </Card>
-            <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">
-                        Mulheres
-                    </CardTitle>
-                    <User className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                    <div className="text-2xl font-bold">—</div>
-                    <p className="text-xs text-muted-foreground">
-                        População feminina
-                    </p>
-                </CardContent>
-            </Card>
-            <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">
-                        Com BI
-                    </CardTitle>
-                    <CreditCard className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                    <div className="text-2xl font-bold">—</div>
-                    <p className="text-xs text-muted-foreground">
-                        Documentados
-                    </p>
-                </CardContent>
-            </Card>
-        </div>
+        <Badge
+            variant="secondary"
+            className="gap-1 bg-amber-100 text-amber-700"
+        >
+            <Clock className="h-3 w-3" />
+            Pendente
+        </Badge>
     );
 };
 
-// Componente de Filtros Avançados
-const FilterBar = ({
-    searchTerm,
-    setSearchTerm,
-    sexoFilter,
-    setSexoFilter,
-    estadoCivilFilter,
-    setEstadoCivilFilter,
-    hasBiFilter,
-    setHasBiFilter,
-    applyFilters,
-    clearFilters,
-    hasActiveFilters,
+const StatCard = ({
+    label,
+    value,
+    icon: Icon,
+    color,
 }: {
-    searchTerm: string;
-    setSearchTerm: (value: string) => void;
-    sexoFilter: string;
-    setSexoFilter: (value: string) => void;
-    estadoCivilFilter: string;
-    setEstadoCivilFilter: (value: string) => void;
-    hasBiFilter: string;
-    setHasBiFilter: (value: string) => void;
-    applyFilters: () => void;
-    clearFilters: () => void;
-    hasActiveFilters: boolean;
-}) => {
-    const [isExpanded, setIsExpanded] = useState(false);
-
-    return (
-        <Card className="p-4">
-            <div className="flex flex-col gap-4">
-                <div className="flex flex-wrap items-center gap-4">
-                    <div className="relative min-w-[200px] flex-1">
-                        <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                        <Input
-                            placeholder="Pesquisar por nome, BI, telefone..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            onKeyDown={(e) =>
-                                e.key === 'Enter' && applyFilters()
-                            }
-                            className="pl-9"
-                        />
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                        <Select
-                            value={sexoFilter || 'all'}
-                            onValueChange={(v) =>
-                                setSexoFilter(v === 'all' ? '' : v)
-                            }
-                        >
-                            <SelectContent>
-                                <SelectItem value="all">Todos</SelectItem>
-                                <SelectItem value="M">Masculino</SelectItem>
-                                <SelectItem value="F">Feminino</SelectItem>
-                            </SelectContent>
-                        </Select>
-                        <Select
-                            value={estadoCivilFilter}
-                            onValueChange={setEstadoCivilFilter}
-                        >
-                            <SelectTrigger className="w-[150px]">
-                                <SelectValue placeholder="Estado Civil" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">Todos</SelectItem>
-                                <SelectItem value="Solteiro">
-                                    Solteiro
-                                </SelectItem>
-                                <SelectItem value="Casado">Casado</SelectItem>
-                                <SelectItem value="Divorciado">
-                                    Divorciado
-                                </SelectItem>
-                                <SelectItem value="Viúvo">Viúvo</SelectItem>
-                            </SelectContent>
-                        </Select>
-                        <Select
-                            value={hasBiFilter}
-                            onValueChange={setHasBiFilter}
-                        >
-                            <SelectTrigger className="w-[130px]">
-                                <SelectValue placeholder="Situação BI" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">Todos</SelectItem>
-                                <SelectItem value="yes">Com BI</SelectItem>
-                                <SelectItem value="no">Sem BI</SelectItem>
-                            </SelectContent>
-                        </Select>
-                        <Button
-                            onClick={applyFilters}
-                            variant="default"
-                            className="gap-2"
-                        >
-                            <Filter className="h-4 w-4" /> Filtrar
-                        </Button>
-                        {hasActiveFilters && (
-                            <Button
-                                onClick={clearFilters}
-                                variant="outline"
-                                className="gap-2"
-                            >
-                                <X className="h-4 w-4" /> Limpar
-                            </Button>
-                        )}
-                    </div>
+    label: string;
+    value: number | string;
+    icon: any;
+    color: string;
+}) => (
+    <Card className="relative overflow-hidden border-0 shadow-sm">
+        <div className={`absolute inset-0 opacity-5 ${color}`} />
+        <CardContent className="p-5">
+            <div className="flex items-center justify-between">
+                <div>
+                    <p className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
+                        {label}
+                    </p>
+                    <p className="mt-1 text-3xl font-bold">{value}</p>
+                </div>
+                <div className={`rounded-xl p-3 ${color} bg-opacity-10`}>
+                    <Icon className="h-5 w-5" />
                 </div>
             </div>
-        </Card>
-    );
-};
+        </CardContent>
+    </Card>
+);
 
-// Componente de Linha da Tabela
-const MunicipeTableRow = ({
-    municipe,
-    onView,
-    onEdit,
-    onDelete,
+const FieldGrid = ({ children }: { children: React.ReactNode }) => (
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {children}
+    </div>
+);
+
+const SubmitBtn = ({
+    label,
+    isSubmitting,
 }: {
-    municipe: Municipe;
-    onView: (m: Municipe) => void;
-    onEdit: (m: Municipe) => void;
-    onDelete: (m: Municipe) => void;
-}) => {
-    const getEstadoBadge = (estado: number) => {
-        switch (estado) {
-            case 0:
-                return (
-                    <Badge variant="secondary" className="gap-1">
-                        <Clock className="h-3 w-3" />
-                        Pendente
-                    </Badge>
-                );
-            case 1:
-                return (
-                    <Badge className="gap-1 bg-green-500">
-                        <CheckCircle className="h-3 w-3" />
-                        Aprovado
-                    </Badge>
-                );
-            case 2:
-                return (
-                    <Badge variant="destructive" className="gap-1">
-                        <AlertCircle className="h-3 w-3" />
-                        Rejeitado
-                    </Badge>
-                );
-            default:
-                return <Badge>Desconhecido</Badge>;
-        }
-    };
+    label: string;
+    isSubmitting: boolean;
+}) => (
+    <Button type="submit" disabled={isSubmitting} size="lg">
+        {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        {label}
+    </Button>
+);
 
-    const calcularIdade = (dataNascimento: string) => {
-        const hoje = new Date();
-        const nascimento = new Date(dataNascimento);
-        let idade = hoje.getFullYear() - nascimento.getFullYear();
-        const mes = hoje.getMonth() - nascimento.getMonth();
-        if (mes < 0 || (mes === 0 && hoje.getDate() < nascimento.getDate()))
-            idade--;
-        return idade;
-    };
+// ─── COMBOBOX DE PROGENITORES (pesquisa assíncrona) ───────────────────────────
+
+interface ProgenitorComboboxProps {
+    value?: number;
+    onChange: (id: number | undefined) => void;
+    sexoFiltro?: 'M' | 'F';
+    placeholder: string;
+    progenitoresIniciais: Progenitor[];
+}
+
+function ProgenitorCombobox({
+    value,
+    onChange,
+    sexoFiltro,
+    placeholder,
+    progenitoresIniciais,
+}: ProgenitorComboboxProps) {
+    const [open, setOpen] = useState(false);
+    const [query, setQuery] = useState('');
+    const [results, setResults] = useState<Progenitor[]>([]);
+    const [loading, setLoading] = useState(false);
+    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const wrapperRef = useRef<HTMLDivElement>(null);
+
+    // Progenitor seleccionado
+    const selected =
+        progenitoresIniciais.find((p) => p.id === value) ||
+        results.find((p) => p.id === value);
+
+    const buscar = useCallback(
+        (q: string) => {
+            setLoading(true);
+            const params = new URLSearchParams({ q });
+            if (sexoFiltro) params.append('sexo', sexoFiltro);
+
+            fetch(`/progenitores/search?${params}`, {
+                headers: {
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            })
+                .then((r) => r.json())
+                .then((data) => setResults(data))
+                .catch(() => setResults([]))
+                .finally(() => setLoading(false));
+        },
+        [sexoFiltro],
+    );
+
+    useEffect(() => {
+        if (!open) return;
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        debounceRef.current = setTimeout(() => buscar(query), 250);
+        return () => {
+            if (debounceRef.current) clearTimeout(debounceRef.current);
+        };
+    }, [query, open, buscar]);
+
+    useEffect(() => {
+        if (open) buscar('');
+    }, [open]);
+
+    // Fecha ao clicar fora
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            if (
+                wrapperRef.current &&
+                !wrapperRef.current.contains(e.target as Node)
+            )
+                setOpen(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+    const lista =
+        results.length > 0
+            ? results
+            : progenitoresIniciais
+                  .filter(
+                      (p) => !sexoFiltro || p.sexo === sexoFiltro || !p.sexo,
+                  )
+                  .filter(
+                      (p) =>
+                          !query ||
+                          p.nome_completo
+                              .toLowerCase()
+                              .includes(query.toLowerCase()),
+                  )
+                  .slice(0, 20);
 
     return (
-        <TableRow className="group transition-colors hover:bg-muted/50">
-            <TableCell className="font-medium">
-                <div>
-                    <div className="font-semibold">
-                        {municipe.nome_completo}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                        ID: {municipe.id}
-                    </div>
-                </div>
-            </TableCell>
-            <TableCell>
-                <div>
-                    <div>
-                        {format(
-                            new Date(municipe.data_nascimento),
-                            'dd/MM/yyyy',
-                        )}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                        {calcularIdade(municipe.data_nascimento)} anos
-                    </div>
-                </div>
-            </TableCell>
-            <TableCell>
-                <Badge
-                    variant={municipe.sexo === 'M' ? 'default' : 'secondary'}
-                >
-                    {municipe.sexo === 'M' ? 'Masculino' : 'Feminino'}
-                </Badge>
-            </TableCell>
-            <TableCell>
-                <div className="space-y-1">
-                    {municipe.bi_numero && (
-                        <div className="flex items-center gap-1 text-sm">
-                            <CreditCard className="h-3 w-3 text-muted-foreground" />
-                            <span>{municipe.bi_numero}</span>
-                        </div>
-                    )}
-                    {municipe.celular && (
-                        <div className="flex items-center gap-1 text-sm">
-                            <Phone className="h-3 w-3 text-muted-foreground" />
-                            <span>{municipe.celular}</span>
-                        </div>
-                    )}
-                </div>
-            </TableCell>
-            <TableCell>
+        <div ref={wrapperRef} className="relative">
+            <div
+                onClick={() => setOpen((o) => !o)}
+                className="flex h-10 w-full cursor-pointer items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-within:ring-2 focus-within:ring-ring"
+            >
+                <span className={selected ? '' : 'text-muted-foreground'}>
+                    {selected ? selected.nome_completo : placeholder}
+                </span>
                 <div className="flex items-center gap-1">
-                    <MapPin className="h-3 w-3 text-muted-foreground" />
-                    <span className="text-sm">
-                        {municipe.endereco?.localidade ||
-                            municipe.municipio_naturalidade?.nome ||
-                            '—'}
-                    </span>
+                    {value && (
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onChange(undefined);
+                                setQuery('');
+                            }}
+                            className="rounded p-0.5 hover:bg-muted"
+                        >
+                            <X className="h-3.5 w-3.5 text-muted-foreground" />
+                        </button>
+                    )}
+                    <Search className="h-4 w-4 text-muted-foreground" />
                 </div>
-            </TableCell>
-            <TableCell>
-                {municipe.recrutamentos && municipe.recrutamentos.length > 0 ? (
-                    <div className="flex flex-wrap gap-1">
-                        {municipe.recrutamentos.slice(0, 2).map((r) => (
-                            <div key={r.id}>{getEstadoBadge(r.estado)}</div>
-                        ))}
+            </div>
+
+            {open && (
+                <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover shadow-lg">
+                    <div className="border-b p-2">
+                        <input
+                            autoFocus
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                            placeholder="Pesquisar nome..."
+                            className="w-full rounded border-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                        />
                     </div>
-                ) : (
-                    <span className="text-xs text-muted-foreground">
-                        Nenhum
-                    </span>
-                )}
-            </TableCell>
-            <TableCell className="text-right">
-                <div className="flex justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => onView(municipe)}
-                        title="Visualizar"
-                    >
-                        <Eye className="h-4 w-4" />
-                    </Button>
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => onEdit(municipe)}
-                        title="Editar"
-                    >
-                        <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => onDelete(municipe)}
-                        title="Excluir"
-                        className="text-destructive hover:text-destructive"
-                    >
-                        <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <div className="max-h-52 overflow-y-auto">
+                        {loading && (
+                            <div className="flex items-center justify-center py-4 text-sm text-muted-foreground">
+                                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                                Pesquisando...
+                            </div>
+                        )}
+                        {!loading && lista.length === 0 && (
+                            <p className="py-4 text-center text-sm text-muted-foreground">
+                                Nenhum resultado
+                            </p>
+                        )}
+                        {!loading &&
+                            lista.map((p) => (
+                                <button
+                                    key={p.id}
+                                    type="button"
+                                    onClick={() => {
+                                        onChange(p.id);
+                                        setOpen(false);
+                                        setQuery('');
+                                    }}
+                                    className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent ${value === p.id ? 'bg-accent font-medium' : ''}`}
+                                >
+                                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold">
+                                        {p.nome_completo.charAt(0)}
+                                    </div>
+                                    <div>
+                                        <p className="leading-tight">
+                                            {p.nome_completo}
+                                        </p>
+                                        {p.profissao && (
+                                            <p className="text-xs text-muted-foreground">
+                                                {p.profissao}
+                                            </p>
+                                        )}
+                                    </div>
+                                    {value === p.id && (
+                                        <CheckCircle className="ml-auto h-4 w-4 text-emerald-500" />
+                                    )}
+                                </button>
+                            ))}
+                    </div>
                 </div>
-            </TableCell>
-        </TableRow>
+            )}
+        </div>
     );
-};
+}
+
+// ─── EMPTY STATE ──────────────────────────────────────────────────────────────
+
+function EmptyState({
+    icon: Icon,
+    label,
+    children,
+}: {
+    icon: any;
+    label: string;
+    children?: React.ReactNode;
+}) {
+    return (
+        <div className="flex flex-col items-center justify-center gap-3 py-14 text-center text-muted-foreground">
+            <Icon className="h-12 w-12 opacity-30" />
+            <p className="font-medium">{label}</p>
+            {children}
+        </div>
+    );
+}
+
+// ─── COMPONENTE PRINCIPAL ─────────────────────────────────────────────────────
 
 export default function MunicipesIndex({
     municipes,
     provincias,
     municipios,
+    progenitores: progenitoresIniciais,
     filters: initialFilters,
+    stats,
 }: Props) {
-    const [isCreateOpen, setIsCreateOpen] = useState(false);
-    const [isEditOpen, setIsEditOpen] = useState(false);
-    const [isViewOpen, setIsViewOpen] = useState(false);
-    const [isBiograficoOpen, setIsBiograficoOpen] = useState(false);
-    const [isComplementarOpen, setIsComplementarOpen] = useState(false);
-    const [isEnderecoOpen, setIsEnderecoOpen] = useState(false);
-    const [isRecrutamentoOpen, setIsRecrutamentoOpen] = useState(false);
-    const [selectedMunicipe, setSelectedMunicipe] = useState<Municipe | null>(
-        null,
-    );
+    const breadcrumbs: BreadcrumbItem[] = [
+        { title: 'Dashboard', href: '/dashboard' },
+        { title: 'Munícipes', href: '/municipes' },
+    ];
+
+    // ── modais
+    const [modal, setModal] = useState<
+        | 'create'
+        | 'edit'
+        | 'view'
+        | 'biografico'
+        | 'complementar'
+        | 'endereco'
+        | 'recrutamento'
+        | 'transferencia'
+        | 'progenitor'
+        | null
+    >(null);
+    const [selected, setSelected] = useState<Municipe | null>(null);
+    const [selectedRecrutamento, setSelectedRecrutamento] =
+        useState<Recrutamento | null>(null);
+    const [deleteTarget, setDeleteTarget] = useState<Municipe | null>(null);
     const [activeTab, setActiveTab] = useState('pessoal');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [progenitorRole, setProgenitorRole] = useState<'pai' | 'mae'>('pai');
 
-    // Filtros
+    // Lista local de progenitores (actualizada após cadastrar novo)
+    const [progenitores, setProgenitores] =
+        useState<Progenitor[]>(progenitoresIniciais);
+
+    // ── filtros
     const [searchTerm, setSearchTerm] = useState(initialFilters.search || '');
     const [sexoFilter, setSexoFilter] = useState(initialFilters.sexo || '');
     const [estadoCivilFilter, setEstadoCivilFilter] = useState(
         initialFilters.estado_civil || '',
     );
     const [hasBiFilter, setHasBiFilter] = useState(initialFilters.has_bi || '');
+    const hasActiveFilters = !!(
+        searchTerm ||
+        sexoFilter ||
+        estadoCivilFilter ||
+        hasBiFilter
+    );
 
-    const breadcrumbs: BreadcrumbItem[] = [
-        { title: 'Dashboard', href: '/dashboard' },
-        { title: 'Munícipes', href: '/municipes' },
-    ];
-
-    // Formulários
-    const form = useForm<z.infer<typeof formSchema>>({
-        resolver: zodResolver(formSchema),
-        defaultValues: {
-            nome_completo: '',
-            data_nascimento: '',
-            sexo: 'M',
-            estado_civil: '',
-            naturalidade: '',
-            id_municipio_naturalidade: undefined,
-            bi_numero: '',
-            bi_data_emissao: '',
-            bi_data_validade: '',
-            telefone: '',
-            celular: '',
-            id_pai: undefined,
-            id_mae: undefined,
-        },
+    // ─── forms
+    const form = useForm<z.infer<typeof municipeSchema>>({
+        resolver: zodResolver(municipeSchema),
+        defaultValues: { sexo: 'M' },
     });
-
     const biograficoForm = useForm<z.infer<typeof biograficoSchema>>({
         resolver: zodResolver(biograficoSchema),
-        defaultValues: {},
     });
-
     const complementarForm = useForm<z.infer<typeof complementarSchema>>({
         resolver: zodResolver(complementarSchema),
-        defaultValues: {},
     });
-
     const enderecoForm = useForm<z.infer<typeof enderecoSchema>>({
         resolver: zodResolver(enderecoSchema),
-        defaultValues: {},
     });
-
     const recrutamentoForm = useForm<z.infer<typeof recrutamentoSchema>>({
         resolver: zodResolver(recrutamentoSchema),
         defaultValues: {
-            data_recruta: new Date().toISOString().split('T')[0],
             estado: 0,
+            data_recruta: new Date().toISOString().split('T')[0],
         },
     });
+    const transferenciaForm = useForm<z.infer<typeof transferenciaSchema>>({
+        resolver: zodResolver(transferenciaSchema),
+        defaultValues: {
+            estado: 0,
+            data_solicitacao: new Date().toISOString().split('T')[0],
+        },
+    });
+    const progenitorForm = useForm<z.infer<typeof progenitorSchema>>({
+        resolver: zodResolver(progenitorSchema),
+        defaultValues: { sexo: 'M' },
+    });
 
+    const watchedProvincia = enderecoForm.watch('id_provincia');
+    const municipiosFiltrados = watchedProvincia
+        ? municipios.filter((m) => m.id_provincia === Number(watchedProvincia))
+        : municipios;
+
+    // ── filtros e navegação
     const applyFilters = () => {
-        const params: any = {};
+        const params: Record<string, string> = {};
         if (searchTerm) params.search = searchTerm;
         if (sexoFilter) params.sexo = sexoFilter;
         if (estadoCivilFilter) params.estado_civil = estadoCivilFilter;
@@ -696,300 +710,853 @@ export default function MunicipesIndex({
         router.get('/municipes', {}, { preserveState: true, replace: true });
     };
 
+    const submit = (routeFn: () => void) => {
+        setIsSubmitting(true);
+        routeFn();
+    };
+
+    // ── abrir modais
     const openCreate = () => {
-        form.reset();
-        setIsCreateOpen(true);
+        form.reset({ sexo: 'M' });
+        setModal('create');
     };
 
-    const openEdit = (municipe: Municipe) => {
-        setSelectedMunicipe(municipe);
+    const openEdit = (m: Municipe) => {
+        setSelected(m);
         form.reset({
-            nome_completo: municipe.nome_completo,
-            data_nascimento: municipe.data_nascimento,
-            sexo: municipe.sexo as 'M' | 'F',
-            estado_civil: municipe.estado_civil || '',
-            naturalidade: municipe.naturalidade || '',
-            id_municipio_naturalidade: municipe.municipio_naturalidade?.id,
-            bi_numero: municipe.bi_numero || '',
-            bi_data_emissao: municipe.bi_data_emissao || '',
-            bi_data_validade: municipe.bi_data_validade || '',
-            telefone: municipe.telefone || '',
-            celular: municipe.celular || '',
-            id_pai: municipe.pai?.id,
-            id_mae: municipe.mae?.id,
+            nome_completo: m.nome_completo,
+            data_nascimento: m.data_nascimento,
+            sexo: m.sexo as 'M' | 'F',
+            estado_civil: m.estado_civil || '',
+            naturalidade: m.naturalidade || '',
+            id_municipio_naturalidade: m.id_municipio_naturalidade,
+            bi_numero: m.bi_numero || '',
+            bi_data_emissao: m.bi_data_emissao || '',
+            bi_data_validade: m.bi_data_validade || '',
+            telefone: m.telefone || '',
+            celular: m.celular || '',
+            id_pai: m.pai?.id,
+            id_mae: m.mae?.id,
         });
-        setIsEditOpen(true);
+        setModal('edit');
     };
 
-    const openView = (municipe: Municipe) => {
-        setSelectedMunicipe(municipe);
+    const openView = (m: Municipe) => {
+        setSelected(m);
         setActiveTab('pessoal');
-        setIsViewOpen(true);
+        setModal('view');
+    };
+    const openBiografico = (m: Municipe) => {
+        setSelected(m);
+        biograficoForm.reset(m.dados_biograficos || {});
+        setModal('biografico');
+    };
+    const openComplementar = (m: Municipe) => {
+        setSelected(m);
+        complementarForm.reset(m.dados_complementares || {});
+        setModal('complementar');
     };
 
-    const openBiograficoModal = (municipe: Municipe) => {
-        setSelectedMunicipe(municipe);
-        biograficoForm.reset(municipe.dados_biograficos || {});
-        setIsBiograficoOpen(true);
-    };
-
-    const openComplementarModal = (municipe: Municipe) => {
-        setSelectedMunicipe(municipe);
-        complementarForm.reset(municipe.dados_complementares || {});
-        setIsComplementarOpen(true);
-    };
-
-    const openEnderecoModal = (municipe: Municipe) => {
-        setSelectedMunicipe(municipe);
+    const openEndereco = (m: Municipe) => {
+        setSelected(m);
         enderecoForm.reset({
-            morada: municipe.endereco?.morada || '',
-            localidade: municipe.endereco?.localidade || '',
-            comuna: municipe.endereco?.comuna || '',
-            id_provincia: municipe.endereco?.id_provincia,
-            id_municipio: municipe.endereco?.id_municipio,
+            morada: m.endereco?.morada || '',
+            localidade: m.endereco?.localidade || '',
+            comuna: m.endereco?.comuna || '',
+            id_provincia: m.endereco?.id_provincia,
+            id_municipio: m.endereco?.id_municipio,
         });
-        setIsEnderecoOpen(true);
+        setModal('endereco');
     };
 
-    const openRecrutamentoModal = (municipe: Municipe) => {
-        setSelectedMunicipe(municipe);
+    const openRecrutamento = (m: Municipe) => {
+        setSelected(m);
         recrutamentoForm.reset({
             data_recruta: new Date().toISOString().split('T')[0],
             estado: 0,
             observacoes: '',
         });
-        setIsRecrutamentoOpen(true);
+        setModal('recrutamento');
     };
 
-    const onSubmitCreate = async (values: z.infer<typeof formSchema>) => {
-        setIsSubmitting(true);
-        router.post('/municipes', values, {
-            onSuccess: () => {
-                setIsCreateOpen(false);
-                form.reset();
-                setIsSubmitting(false);
-            },
-            onError: () => setIsSubmitting(false),
+    const openTransferencia = (m: Municipe, rec: Recrutamento) => {
+        setSelected(m);
+        setSelectedRecrutamento(rec);
+        transferenciaForm.reset({
+            data_solicitacao: new Date().toISOString().split('T')[0],
+            estado: 0,
         });
+        setModal('transferencia');
     };
 
-    const onSubmitEdit = async (values: z.infer<typeof formSchema>) => {
-        if (!selectedMunicipe) return;
+    const openProgenitor = (role: 'pai' | 'mae') => {
+        setProgenitorRole(role);
+        progenitorForm.reset({ sexo: role === 'pai' ? 'M' : 'F' });
+        setModal('progenitor');
+    };
+
+    const closeModal = () => {
+        setModal(null);
+        setSelected(null);
+        setSelectedRecrutamento(null);
+        setIsSubmitting(false);
+    };
+
+    // ── submits
+    const onCreateSubmit = (v: z.infer<typeof municipeSchema>) =>
+        submit(() =>
+            router.post('/municipes', v, {
+                onSuccess: closeModal,
+                onError: () => setIsSubmitting(false),
+            }),
+        );
+
+    const onEditSubmit = (v: z.infer<typeof municipeSchema>) => {
+        if (!selected) return;
+        submit(() =>
+            router.put(`/municipes/${selected.id}`, v, {
+                onSuccess: closeModal,
+                onError: () => setIsSubmitting(false),
+            }),
+        );
+    };
+
+    const onBiograficoSubmit = (v: z.infer<typeof biograficoSchema>) => {
+        if (!selected) return;
+        submit(() =>
+            router.post(`/municipes/${selected.id}/biografico`, v, {
+                onSuccess: closeModal,
+                onError: () => setIsSubmitting(false),
+            }),
+        );
+    };
+
+    const onComplementarSubmit = (v: z.infer<typeof complementarSchema>) => {
+        if (!selected) return;
+        submit(() =>
+            router.post(`/municipes/${selected.id}/complementar`, v, {
+                onSuccess: closeModal,
+                onError: () => setIsSubmitting(false),
+            }),
+        );
+    };
+
+    const onEnderecoSubmit = (v: z.infer<typeof enderecoSchema>) => {
+        if (!selected) return;
+        submit(() =>
+            router.post(`/municipes/${selected.id}/endereco`, v, {
+                onSuccess: closeModal,
+                onError: () => setIsSubmitting(false),
+            }),
+        );
+    };
+
+    const onRecrutamentoSubmit = (v: z.infer<typeof recrutamentoSchema>) => {
+        if (!selected) return;
+        submit(() =>
+            router.post(`/municipes/${selected.id}/recrutamento`, v, {
+                onSuccess: closeModal,
+                onError: () => setIsSubmitting(false),
+            }),
+        );
+    };
+
+    const onTransferenciaSubmit = (v: z.infer<typeof transferenciaSchema>) => {
+        if (!selected || !selectedRecrutamento) return;
+        submit(() =>
+            router.post(
+                `/municipes/${selected.id}/recrutamento/${selectedRecrutamento.id}/transferencia`,
+                v,
+                {
+                    onSuccess: closeModal,
+                    onError: () => setIsSubmitting(false),
+                },
+            ),
+        );
+    };
+
+    /**
+     * Cadastra progenitor via fetch JSON para obter o ID devolvido e auto-seleccionar.
+     */
+    const onProgenitorSubmit = async (v: z.infer<typeof progenitorSchema>) => {
         setIsSubmitting(true);
-        router.put(`/municipes/${selectedMunicipe.id}`, values, {
-            onSuccess: () => {
-                setIsEditOpen(false);
-                setSelectedMunicipe(null);
-                setIsSubmitting(false);
-            },
-            onError: () => setIsSubmitting(false),
-        });
-    };
+        try {
+            const csrfMeta = document.querySelector<HTMLMetaElement>(
+                'meta[name="csrf-token"]',
+            );
+            const csrfToken = csrfMeta?.content || '';
 
-    const handleDelete = (municipe: Municipe) => {
-        if (
-            confirm(
-                `Tem certeza que deseja remover ${municipe.nome_completo}? Esta ação não pode ser desfeita.`,
-            )
-        ) {
-            router.delete(`/municipes/${municipe.id}`);
+            const res = await fetch('/progenitores', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json',
+                    'X-CSRF-TOKEN': csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: JSON.stringify(v),
+            });
+
+            if (!res.ok) throw new Error('Erro ao cadastrar progenitor');
+
+            const novo: Progenitor = await res.json();
+
+            // Actualiza lista local
+            setProgenitores((prev) =>
+                [...prev, novo].sort((a, b) =>
+                    a.nome_completo.localeCompare(b.nome_completo),
+                ),
+            );
+
+            // Auto-selecciona no formulário pai/mãe
+            if (progenitorRole === 'pai') form.setValue('id_pai', novo.id);
+            else form.setValue('id_mae', novo.id);
+
+            closeModal();
+        } catch {
+            // Fallback: redireciona via Inertia
+            router.post('/progenitores', v, {
+                onSuccess: closeModal,
+                onError: () => setIsSubmitting(false),
+            });
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
-    const onSubmitBiografico = async (
-        values: z.infer<typeof biograficoSchema>,
-    ) => {
-        if (!selectedMunicipe) return;
-        setIsSubmitting(true);
-        router.post(`/municipes/${selectedMunicipe.id}/biografico`, values, {
-            onSuccess: () => {
-                setIsBiograficoOpen(false);
-                setIsSubmitting(false);
-            },
-            onError: () => setIsSubmitting(false),
+    const handleDelete = () => {
+        if (!deleteTarget) return;
+        router.delete(`/municipes/${deleteTarget.id}`, {
+            onFinish: () => setDeleteTarget(null),
         });
     };
-
-    const onSubmitComplementar = async (
-        values: z.infer<typeof complementarSchema>,
-    ) => {
-        if (!selectedMunicipe) return;
-        setIsSubmitting(true);
-        router.post(`/municipes/${selectedMunicipe.id}/complementar`, values, {
-            onSuccess: () => {
-                setIsComplementarOpen(false);
-                setIsSubmitting(false);
-            },
-            onError: () => setIsSubmitting(false),
-        });
+    const downloadPdf = (m: Municipe) => {
+        generateFichaMunicipePDF(m)(); // chama imediatamente o handler retornado
     };
+    // ─── Formulário munícipe com combobox de progenitores ─────────────────────
+    const MunicipeFormFields = ({ f }: { f: typeof form }) => (
+        <>
+            <FieldGrid>
+                <FormField
+                    control={f.control}
+                    name="nome_completo"
+                    render={({ field }) => (
+                        <FormItem className="md:col-span-2 lg:col-span-2">
+                            <FormLabel>Nome Completo *</FormLabel>
+                            <FormControl>
+                                <Input
+                                    placeholder="Ex: João Pedro da Silva"
+                                    {...field}
+                                />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                <FormField
+                    control={f.control}
+                    name="data_nascimento"
+                    render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>Data de Nascimento *</FormLabel>
+                            <FormControl>
+                                <Input type="date" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                <FormField
+                    control={f.control}
+                    name="sexo"
+                    render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>Sexo *</FormLabel>
+                            <Select
+                                onValueChange={field.onChange}
+                                value={field.value}
+                            >
+                                <FormControl>
+                                    <SelectTrigger>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                    <SelectItem value="M">Masculino</SelectItem>
+                                    <SelectItem value="F">Feminino</SelectItem>
+                                </SelectContent>
+                            </Select>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                <FormField
+                    control={f.control}
+                    name="estado_civil"
+                    render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>Estado Civil</FormLabel>
+                            <Select
+                                onValueChange={field.onChange}
+                                value={field.value || ''}
+                            >
+                                <FormControl>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Selecione" />
+                                    </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                    {[
+                                        'Solteiro',
+                                        'Casado',
+                                        'Divorciado',
+                                        'Viúvo',
+                                    ].map((v) => (
+                                        <SelectItem key={v} value={v}>
+                                            {v}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                <FormField
+                    control={f.control}
+                    name="naturalidade"
+                    render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>Naturalidade</FormLabel>
+                            <FormControl>
+                                <Input placeholder="Ex: Benguela" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                <FormField
+                    control={f.control}
+                    name="id_municipio_naturalidade"
+                    render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>Município de Naturalidade</FormLabel>
+                            <Select
+                                onValueChange={field.onChange}
+                                value={field.value?.toString()}
+                            >
+                                <FormControl>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Selecione" />
+                                    </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                    {municipios.map((m) => (
+                                        <SelectItem
+                                            key={m.id}
+                                            value={m.id.toString()}
+                                        >
+                                            {m.nome}
+                                            {m.provincia &&
+                                                ` (${m.provincia.nome})`}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                <FormField
+                    control={f.control}
+                    name="bi_numero"
+                    render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>Número do BI</FormLabel>
+                            <FormControl>
+                                <Input
+                                    placeholder="Ex: 123456789LA042"
+                                    {...field}
+                                />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                <FormField
+                    control={f.control}
+                    name="bi_data_emissao"
+                    render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>Emissão BI</FormLabel>
+                            <FormControl>
+                                <Input type="date" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                <FormField
+                    control={f.control}
+                    name="bi_data_validade"
+                    render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>Validade BI</FormLabel>
+                            <FormControl>
+                                <Input type="date" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                <FormField
+                    control={f.control}
+                    name="telefone"
+                    render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>Telefone</FormLabel>
+                            <FormControl>
+                                <Input placeholder="Ex: 272123456" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                <FormField
+                    control={f.control}
+                    name="celular"
+                    render={({ field }) => (
+                        <FormItem>
+                            <FormLabel>Celular</FormLabel>
+                            <FormControl>
+                                <Input placeholder="Ex: 923456789" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+            </FieldGrid>
 
-    const onSubmitEndereco = async (values: z.infer<typeof enderecoSchema>) => {
-        if (!selectedMunicipe) return;
-        setIsSubmitting(true);
-        router.post(`/municipes/${selectedMunicipe.id}/endereco`, values, {
-            onSuccess: () => {
-                setIsEnderecoOpen(false);
-                setIsSubmitting(false);
-            },
-            onError: () => setIsSubmitting(false),
-        });
-    };
-
-    const onSubmitRecrutamento = async (
-        values: z.infer<typeof recrutamentoSchema>,
-    ) => {
-        if (!selectedMunicipe) return;
-        setIsSubmitting(true);
-        router.post(`/municipes/${selectedMunicipe.id}/recrutamento`, values, {
-            onSuccess: () => {
-                setIsRecrutamentoOpen(false);
-                setIsSubmitting(false);
-            },
-            onError: () => setIsSubmitting(false),
-        });
-    };
-
-    const hasActiveFilters = !!(
-        searchTerm ||
-        sexoFilter ||
-        estadoCivilFilter ||
-        hasBiFilter
+            {/* ── PROGENITORES com combobox pesquisável ── */}
+            <div>
+                <div className="mb-3 flex items-center justify-between">
+                    <p className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
+                        Progenitores
+                    </p>
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="gap-1 text-xs"
+                        onClick={() => openProgenitor('pai')}
+                    >
+                        <Plus className="h-3 w-3" /> Cadastrar progenitor
+                    </Button>
+                </div>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <FormField
+                        control={f.control}
+                        name="id_pai"
+                        render={({ field }) => (
+                            <FormItem>
+                                <FormLabel className="flex items-center gap-1">
+                                    <Heart className="h-3 w-3 text-blue-500" />{' '}
+                                    Pai
+                                </FormLabel>
+                                <FormControl>
+                                    <ProgenitorCombobox
+                                        value={field.value}
+                                        onChange={field.onChange}
+                                        sexoFiltro="M"
+                                        placeholder="Pesquisar e selecionar o pai..."
+                                        progenitoresIniciais={progenitores}
+                                    />
+                                </FormControl>
+                                <FormMessage />
+                            </FormItem>
+                        )}
+                    />
+                    <FormField
+                        control={f.control}
+                        name="id_mae"
+                        render={({ field }) => (
+                            <FormItem>
+                                <FormLabel className="flex items-center gap-1">
+                                    <Heart className="h-3 w-3 text-pink-500" />{' '}
+                                    Mãe
+                                </FormLabel>
+                                <FormControl>
+                                    <ProgenitorCombobox
+                                        value={field.value}
+                                        onChange={field.onChange}
+                                        sexoFiltro="F"
+                                        placeholder="Pesquisar e selecionar a mãe..."
+                                        progenitoresIniciais={progenitores}
+                                    />
+                                </FormControl>
+                                <FormMessage />
+                            </FormItem>
+                        )}
+                    />
+                </div>
+            </div>
+        </>
     );
 
-    // Filtros por município para o select de endereço
-    const municipiosFiltrados = enderecoForm.watch('id_provincia')
-        ? municipios.filter(
-              (m) => m.id_provincia === enderecoForm.getValues('id_provincia'),
-          )
-        : municipios;
-
-    return (
-        <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Gestão de Munícipes - SIGID" />
-
-            <div className="flex h-full flex-1 flex-col gap-6 bg-background p-6">
-                {/* Header com estatísticas */}
-                <div className="space-y-4">
-                    <div className="flex items-center justify-between">
+    // ─── Linha de tabela ──────────────────────────────────────────────────────
+    const TableRowItem = ({ m }: { m: Municipe }) => {
+        const aprovado = temRecrutamentoAprovado(m);
+        return (
+            <TableRow className="group transition-colors hover:bg-muted/40">
+                <TableCell>
+                    <div className="flex items-center gap-3">
+                        <div
+                            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white ${m.sexo === 'M' ? 'bg-blue-500' : 'bg-pink-500'}`}
+                        >
+                            {m.nome_completo.charAt(0).toUpperCase()}
+                        </div>
                         <div>
-                            <h1 className="bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-4xl font-bold tracking-tight text-transparent">
-                                Munícipes
-                            </h1>
-                            <p className="mt-1 text-muted-foreground">
-                                Gestão completa do cadastro de cidadãos do
-                                município de Benguela
+                            <p className="leading-tight font-semibold">
+                                {m.nome_completo}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                                #{m.id}
                             </p>
                         </div>
-                        <Button
-                            onClick={openCreate}
-                            size="lg"
-                            className="gap-2 shadow-lg transition-all hover:shadow-xl"
-                        >
-                            <Plus className="h-5 w-5" />
-                            Novo Munícipe
-                        </Button>
                     </div>
-                    <StatsCards total={municipes.total} />
+                </TableCell>
+                <TableCell className="text-sm">
+                    <div>{formatDate(m.data_nascimento)}</div>
+                    <div className="text-xs text-muted-foreground">
+                        {calcularIdade(m.data_nascimento)} anos
+                    </div>
+                </TableCell>
+                <TableCell>
+                    <Badge
+                        variant={m.sexo === 'M' ? 'default' : 'secondary'}
+                        className="text-xs"
+                    >
+                        {m.sexo === 'M' ? 'Masc.' : 'Fem.'}
+                    </Badge>
+                </TableCell>
+                <TableCell>
+                    {m.bi_numero ? (
+                        <div className="flex items-center gap-1 text-xs">
+                            <CreditCard className="h-3 w-3 text-muted-foreground" />
+                            <span className="font-mono">{m.bi_numero}</span>
+                        </div>
+                    ) : (
+                        <span className="text-xs text-muted-foreground italic">
+                            Sem BI
+                        </span>
+                    )}
+                    {m.celular && (
+                        <div className="mt-0.5 flex items-center gap-1 text-xs">
+                            <Phone className="h-3 w-3 text-muted-foreground" />
+                            {m.celular}
+                        </div>
+                    )}
+                </TableCell>
+                <TableCell className="text-sm">
+                    <div className="flex items-center gap-1">
+                        <MapPin className="h-3 w-3 text-muted-foreground" />
+                        {m.endereco?.localidade ||
+                            m.municipio_naturalidade?.nome || (
+                                <span className="text-muted-foreground">—</span>
+                            )}
+                    </div>
+                </TableCell>
+                <TableCell>
+                    {m.recrutamentos && m.recrutamentos.length > 0 ? (
+                        <EstadoBadge estado={m.recrutamentos[0].estado} />
+                    ) : (
+                        <span className="text-xs text-muted-foreground">
+                            Sem recrutamento
+                        </span>
+                    )}
+                </TableCell>
+                <TableCell className="text-right">
+                    <div className="flex justify-end gap-0.5">
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8"
+                                        onClick={() => openView(m)}
+                                    >
+                                        <Eye className="h-4 w-4" />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Ver detalhes</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8"
+                                        onClick={() => openEdit(m)}
+                                    >
+                                        <Edit className="h-4 w-4" />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Editar</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8"
+                                        onClick={() => downloadPdf(m)}
+                                    >
+                                        <FileDown className="h-4 w-4 text-indigo-500" />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Exportar PDF</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 text-destructive hover:text-destructive"
+                                        onClick={() => setDeleteTarget(m)}
+                                    >
+                                        <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Remover</TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
+                    </div>
+                </TableCell>
+            </TableRow>
+        );
+    };
+
+    // ─── RENDER ───────────────────────────────────────────────────────────────
+    return (
+        <AppLayout breadcrumbs={breadcrumbs}>
+            <Head title="Munícipes — SIGID" />
+
+            <div className="flex flex-col gap-6 p-6">
+                {/* HEADER */}
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                        <h1 className="text-3xl font-bold tracking-tight">
+                            Munícipes
+                        </h1>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                            Gestão completa do cadastro de cidadãos · Benguela
+                        </p>
+                    </div>
+                    <Button onClick={openCreate} className="gap-2 shadow-sm">
+                        <Plus className="h-4 w-4" /> Novo Munícipe
+                    </Button>
                 </div>
 
-                {/* Filtros */}
-                <FilterBar
-                    searchTerm={searchTerm}
-                    setSearchTerm={setSearchTerm}
-                    sexoFilter={sexoFilter}
-                    setSexoFilter={setSexoFilter}
-                    estadoCivilFilter={estadoCivilFilter}
-                    setEstadoCivilFilter={setEstadoCivilFilter}
-                    hasBiFilter={hasBiFilter}
-                    setHasBiFilter={setHasBiFilter}
-                    applyFilters={applyFilters}
-                    clearFilters={clearFilters}
-                    hasActiveFilters={hasActiveFilters}
-                />
+                {/* STAT CARDS */}
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <StatCard
+                        label="Total cadastrado"
+                        value={stats.total}
+                        icon={Users}
+                        color="bg-indigo-500"
+                    />
+                    <StatCard
+                        label="Homens"
+                        value={stats.masculino}
+                        icon={User}
+                        color="bg-blue-500"
+                    />
+                    <StatCard
+                        label="Mulheres"
+                        value={stats.feminino}
+                        icon={User}
+                        color="bg-pink-500"
+                    />
+                    <StatCard
+                        label="Com BI"
+                        value={stats.com_bi}
+                        icon={CreditCard}
+                        color="bg-emerald-500"
+                    />
+                </div>
 
-                {/* Tabela de Munícipes */}
-                <Card>
-                    <CardContent className="p-0">
-                        <div className="rounded-md border-0">
-                            <Table>
-                                <TableHeader className="bg-muted/50">
-                                    <TableRow>
-                                        <TableHead className="w-[250px]">
-                                            Nome Completo
-                                        </TableHead>
-                                        <TableHead className="w-[120px]">
-                                            Nascimento
-                                        </TableHead>
-                                        <TableHead className="w-[100px]">
-                                            Sexo
-                                        </TableHead>
-                                        <TableHead className="w-[180px]">
-                                            Documentos
-                                        </TableHead>
-                                        <TableHead className="w-[150px]">
-                                            Localidade
-                                        </TableHead>
-                                        <TableHead className="w-[130px]">
-                                            Recrutamento
-                                        </TableHead>
-                                        <TableHead className="w-[100px] text-right">
-                                            Ações
-                                        </TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {municipes.data.length > 0 ? (
-                                        municipes.data.map((municipe) => (
-                                            <MunicipeTableRow
-                                                key={municipe.id}
-                                                municipe={municipe}
-                                                onView={openView}
-                                                onEdit={openEdit}
-                                                onDelete={handleDelete}
-                                            />
-                                        ))
-                                    ) : (
-                                        <TableRow>
-                                            <TableCell
-                                                colSpan={7}
-                                                className="h-64 text-center"
-                                            >
-                                                <div className="flex flex-col items-center justify-center gap-2">
-                                                    <Users className="h-12 w-12 text-muted-foreground" />
-                                                    <p className="text-lg font-medium">
-                                                        Nenhum munícipe
-                                                        encontrado
-                                                    </p>
-                                                    <p className="text-sm text-muted-foreground">
-                                                        {hasActiveFilters
-                                                            ? 'Tente ajustar os filtros aplicados'
-                                                            : 'Clique em "Novo Munícipe" para começar'}
-                                                    </p>
-                                                    {hasActiveFilters && (
-                                                        <Button
-                                                            onClick={
-                                                                clearFilters
-                                                            }
-                                                            variant="outline"
-                                                            className="mt-2"
-                                                        >
-                                                            Limpar Filtros
-                                                        </Button>
-                                                    )}
-                                                </div>
-                                            </TableCell>
-                                        </TableRow>
-                                    )}
-                                </TableBody>
-                            </Table>
+                {/* FILTROS */}
+                <Card className="border shadow-sm">
+                    <CardContent className="p-4">
+                        <div className="flex flex-wrap items-center gap-3">
+                            <div className="relative min-w-[220px] flex-1">
+                                <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                <Input
+                                    placeholder="Nome, BI, telefone..."
+                                    value={searchTerm}
+                                    onChange={(e) =>
+                                        setSearchTerm(e.target.value)
+                                    }
+                                    onKeyDown={(e) =>
+                                        e.key === 'Enter' && applyFilters()
+                                    }
+                                    className="pl-9"
+                                />
+                            </div>
+                            <Select
+                                value={sexoFilter || 'all'}
+                                onValueChange={(v) =>
+                                    setSexoFilter(v === 'all' ? '' : v)
+                                }
+                            >
+                                <SelectTrigger className="w-[130px]">
+                                    <SelectValue placeholder="Sexo" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">Todos</SelectItem>
+                                    <SelectItem value="M">Masculino</SelectItem>
+                                    <SelectItem value="F">Feminino</SelectItem>
+                                </SelectContent>
+                            </Select>
+                            <Select
+                                value={estadoCivilFilter || 'all'}
+                                onValueChange={(v) =>
+                                    setEstadoCivilFilter(v === 'all' ? '' : v)
+                                }
+                            >
+                                <SelectTrigger className="w-[150px]">
+                                    <SelectValue placeholder="Estado civil" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">Todos</SelectItem>
+                                    {[
+                                        'Solteiro',
+                                        'Casado',
+                                        'Divorciado',
+                                        'Viúvo',
+                                        'União de Facto',
+                                    ].map((v) => (
+                                        <SelectItem key={v} value={v}>
+                                            {v}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <Select
+                                value={hasBiFilter || 'all'}
+                                onValueChange={(v) =>
+                                    setHasBiFilter(v === 'all' ? '' : v)
+                                }
+                            >
+                                <SelectTrigger className="w-[130px]">
+                                    <SelectValue placeholder="Doc. BI" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">Todos</SelectItem>
+                                    <SelectItem value="yes">
+                                        <span className="flex items-center gap-2">
+                                            <UserCheck className="h-3 w-3" />
+                                            Com BI
+                                        </span>
+                                    </SelectItem>
+                                    <SelectItem value="no">
+                                        <span className="flex items-center gap-2">
+                                            <UserX className="h-3 w-3" />
+                                            Sem BI
+                                        </span>
+                                    </SelectItem>
+                                </SelectContent>
+                            </Select>
+                            <Button onClick={applyFilters} className="gap-2">
+                                <Filter className="h-4 w-4" />
+                                Filtrar
+                            </Button>
+                            {hasActiveFilters && (
+                                <Button
+                                    onClick={clearFilters}
+                                    variant="ghost"
+                                    className="gap-2 text-muted-foreground"
+                                >
+                                    <X className="h-4 w-4" />
+                                    Limpar
+                                </Button>
+                            )}
                         </div>
                     </CardContent>
                 </Card>
 
-                {/* Paginação */}
+                {/* TABELA */}
+                <Card className="overflow-hidden border shadow-sm">
+                    <div className="overflow-x-auto">
+                        <Table>
+                            <TableHeader>
+                                <TableRow className="bg-muted/40 hover:bg-muted/40">
+                                    <TableHead className="w-[260px]">
+                                        Munícipe
+                                    </TableHead>
+                                    <TableHead className="w-[110px]">
+                                        Nascimento
+                                    </TableHead>
+                                    <TableHead className="w-[80px]">
+                                        Sexo
+                                    </TableHead>
+                                    <TableHead className="w-[180px]">
+                                        Documentos
+                                    </TableHead>
+                                    <TableHead className="w-[140px]">
+                                        Localidade
+                                    </TableHead>
+                                    <TableHead className="w-[130px]">
+                                        Recrutamento
+                                    </TableHead>
+                                    <TableHead className="w-[120px] text-right">
+                                        Ações
+                                    </TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {municipes.data.length > 0 ? (
+                                    municipes.data.map((m) => (
+                                        <TableRowItem key={m.id} m={m} />
+                                    ))
+                                ) : (
+                                    <TableRow>
+                                        <TableCell
+                                            colSpan={7}
+                                            className="h-52 text-center"
+                                        >
+                                            <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                                                <Users className="h-10 w-10" />
+                                                <p className="font-medium">
+                                                    Nenhum munícipe encontrado
+                                                </p>
+                                                <p className="text-sm">
+                                                    {hasActiveFilters
+                                                        ? 'Tente ajustar os filtros'
+                                                        : 'Clique em "Novo Munícipe" para começar'}
+                                                </p>
+                                                {hasActiveFilters && (
+                                                    <Button
+                                                        onClick={clearFilters}
+                                                        variant="outline"
+                                                        size="sm"
+                                                    >
+                                                        Limpar filtros
+                                                    </Button>
+                                                )}
+                                            </div>
+                                        </TableCell>
+                                    </TableRow>
+                                )}
+                            </TableBody>
+                        </Table>
+                    </div>
+                </Card>
+
+                {/* PAGINAÇÃO */}
                 {municipes.last_page > 1 && (
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
                         <p className="text-sm text-muted-foreground">
                             Mostrando{' '}
                             <span className="font-medium">
@@ -1001,7 +1568,7 @@ export default function MunicipesIndex({
                             </span>{' '}
                             munícipes
                         </p>
-                        <div className="flex gap-2">
+                        <div className="flex items-center gap-1">
                             <Button
                                 variant="outline"
                                 size="sm"
@@ -1015,59 +1582,43 @@ export default function MunicipesIndex({
                                 }
                             >
                                 <ChevronLeft className="h-4 w-4" />
-                                Anterior
                             </Button>
-                            <div className="flex items-center gap-1">
-                                {Array.from(
-                                    {
-                                        length: Math.min(
-                                            5,
-                                            municipes.last_page,
-                                        ),
-                                    },
-                                    (_, i) => {
-                                        let pageNum;
-                                        if (municipes.last_page <= 5) {
-                                            pageNum = i + 1;
-                                        } else if (
-                                            municipes.current_page <= 3
-                                        ) {
-                                            pageNum = i + 1;
-                                        } else if (
-                                            municipes.current_page >=
-                                            municipes.last_page - 2
-                                        ) {
-                                            pageNum =
-                                                municipes.last_page - 4 + i;
-                                        } else {
-                                            pageNum =
-                                                municipes.current_page - 2 + i;
-                                        }
-                                        return (
-                                            <Button
-                                                key={pageNum}
-                                                variant={
-                                                    municipes.current_page ===
-                                                    pageNum
-                                                        ? 'default'
-                                                        : 'outline'
-                                                }
-                                                size="sm"
-                                                className="w-9"
-                                                onClick={() =>
-                                                    router.get(
-                                                        `/municipes?page=${pageNum}`,
-                                                        {},
-                                                        { preserveState: true },
-                                                    )
-                                                }
-                                            >
-                                                {pageNum}
-                                            </Button>
-                                        );
-                                    },
-                                )}
-                            </div>
+                            {Array.from(
+                                { length: Math.min(7, municipes.last_page) },
+                                (_, i) => {
+                                    let p: number;
+                                    if (municipes.last_page <= 7) p = i + 1;
+                                    else if (municipes.current_page <= 4)
+                                        p = i + 1;
+                                    else if (
+                                        municipes.current_page >=
+                                        municipes.last_page - 3
+                                    )
+                                        p = municipes.last_page - 6 + i;
+                                    else p = municipes.current_page - 3 + i;
+                                    return (
+                                        <Button
+                                            key={p}
+                                            variant={
+                                                municipes.current_page === p
+                                                    ? 'default'
+                                                    : 'outline'
+                                            }
+                                            size="sm"
+                                            className="w-9"
+                                            onClick={() =>
+                                                router.get(
+                                                    `/municipes?page=${p}`,
+                                                    {},
+                                                    { preserveState: true },
+                                                )
+                                            }
+                                        >
+                                            {p}
+                                        </Button>
+                                    );
+                                },
+                            )}
                             <Button
                                 variant="outline"
                                 size="sm"
@@ -1083,7 +1634,6 @@ export default function MunicipesIndex({
                                     )
                                 }
                             >
-                                Próximo
                                 <ChevronRight className="h-4 w-4" />
                             </Button>
                         </div>
@@ -1091,1616 +1641,1052 @@ export default function MunicipesIndex({
                 )}
             </div>
 
-            {/* ==================== MODAL DE CRIAÇÃO ==================== */}
-            <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-                <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
+            {/* ══════════════════════════════════════════ MODAL: CRIAR ══════════════════════════════════════════ */}
+            <Dialog
+                open={modal === 'create'}
+                onOpenChange={(o) => !o && closeModal()}
+            >
+                <DialogContent className="max-h-[92vh] min-w-6xl overflow-y-auto">
                     <DialogHeader>
-                        <DialogTitle className="text-2xl">
+                        <DialogTitle className="text-xl">
                             Cadastrar Novo Munícipe
                         </DialogTitle>
                         <DialogDescription>
-                            Preencha os dados pessoais do munícipe. Os dados
-                            complementares podem ser adicionados posteriormente.
+                            Preencha os dados pessoais. Os dados complementares
+                            podem ser adicionados depois.
                         </DialogDescription>
                     </DialogHeader>
-                    <Separator className="my-4" />
+                    <Separator />
                     <Form {...form}>
                         <form
-                            onSubmit={form.handleSubmit(onSubmitCreate)}
+                            onSubmit={form.handleSubmit(onCreateSubmit)}
                             className="space-y-6"
                         >
-                            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-                                <FormField
-                                    control={form.control}
-                                    name="nome_completo"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel className="font-semibold">
-                                                Nome Completo *
-                                            </FormLabel>
-                                            <FormControl>
-                                                <Input
-                                                    placeholder="Ex: João Pedro da Silva"
-                                                    {...field}
-                                                    className="h-11"
-                                                />
-                                            </FormControl>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={form.control}
-                                    name="data_nascimento"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel className="font-semibold">
-                                                Data de Nascimento *
-                                            </FormLabel>
-                                            <FormControl>
-                                                <Input
-                                                    type="date"
-                                                    {...field}
-                                                    className="h-11"
-                                                />
-                                            </FormControl>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={form.control}
-                                    name="sexo"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel className="font-semibold">
-                                                Sexo *
-                                            </FormLabel>
-                                            <Select
-                                                onValueChange={field.onChange}
-                                                defaultValue={field.value}
-                                            >
-                                                <FormControl>
-                                                    <SelectTrigger className="h-11">
-                                                        <SelectValue placeholder="Selecione o sexo" />
-                                                    </SelectTrigger>
-                                                </FormControl>
-                                                <SelectContent>
-                                                    <SelectItem value="M">
-                                                        Masculino
-                                                    </SelectItem>
-                                                    <SelectItem value="F">
-                                                        Feminino
-                                                    </SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={form.control}
-                                    name="estado_civil"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel className="font-semibold">
-                                                Estado Civil
-                                            </FormLabel>
-                                            <Select
-                                                onValueChange={field.onChange}
-                                                defaultValue={field.value}
-                                            >
-                                                <FormControl>
-                                                    <SelectTrigger className="h-11">
-                                                        <SelectValue placeholder="Selecione" />
-                                                    </SelectTrigger>
-                                                </FormControl>
-                                                <SelectContent>
-                                                    <SelectItem value="Solteiro">
-                                                        Solteiro
-                                                    </SelectItem>
-                                                    <SelectItem value="Casado">
-                                                        Casado
-                                                    </SelectItem>
-                                                    <SelectItem value="Divorciado">
-                                                        Divorciado
-                                                    </SelectItem>
-                                                    <SelectItem value="Viúvo">
-                                                        Viúvo
-                                                    </SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={form.control}
-                                    name="naturalidade"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel className="font-semibold">
-                                                Naturalidade
-                                            </FormLabel>
-                                            <FormControl>
-                                                <Input
-                                                    placeholder="Ex: Benguela"
-                                                    {...field}
-                                                    className="h-11"
-                                                />
-                                            </FormControl>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={form.control}
-                                    name="id_municipio_naturalidade"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel className="font-semibold">
-                                                Município de Naturalidade
-                                            </FormLabel>
-                                            <Select
-                                                onValueChange={field.onChange}
-                                                value={field.value?.toString()}
-                                            >
-                                                <FormControl>
-                                                    <SelectTrigger className="h-11">
-                                                        <SelectValue placeholder="Selecione o município" />
-                                                    </SelectTrigger>
-                                                </FormControl>
-                                                <SelectContent>
-                                                    {municipios.map((m) => (
-                                                        <SelectItem
-                                                            key={m.id}
-                                                            value={m.id.toString()}
-                                                        >
-                                                            {m.nome}{' '}
-                                                            {m.provincia &&
-                                                                `(${m.provincia.nome})`}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={form.control}
-                                    name="bi_numero"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel className="font-semibold">
-                                                Número do BI
-                                            </FormLabel>
-                                            <FormControl>
-                                                <Input
-                                                    placeholder="Ex: 123456789LA042"
-                                                    {...field}
-                                                    className="h-11"
-                                                />
-                                            </FormControl>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={form.control}
-                                    name="bi_data_emissao"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel className="font-semibold">
-                                                Data de Emissão BI
-                                            </FormLabel>
-                                            <FormControl>
-                                                <Input
-                                                    type="date"
-                                                    {...field}
-                                                    className="h-11"
-                                                />
-                                            </FormControl>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={form.control}
-                                    name="bi_data_validade"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel className="font-semibold">
-                                                Data de Validade BI
-                                            </FormLabel>
-                                            <FormControl>
-                                                <Input
-                                                    type="date"
-                                                    {...field}
-                                                    className="h-11"
-                                                />
-                                            </FormControl>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={form.control}
-                                    name="telefone"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel className="font-semibold">
-                                                Telefone
-                                            </FormLabel>
-                                            <FormControl>
-                                                <Input
-                                                    placeholder="Ex: 272123456"
-                                                    {...field}
-                                                    className="h-11"
-                                                />
-                                            </FormControl>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={form.control}
-                                    name="celular"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel className="font-semibold">
-                                                Celular
-                                            </FormLabel>
-                                            <FormControl>
-                                                <Input
-                                                    placeholder="Ex: 923456789"
-                                                    {...field}
-                                                    className="h-11"
-                                                />
-                                            </FormControl>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-                            </div>
-                            <Separator className="my-4" />
+                            <MunicipeFormFields f={form} />
                             <DialogFooter>
                                 <Button
                                     type="button"
                                     variant="outline"
-                                    onClick={() => setIsCreateOpen(false)}
-                                    size="lg"
+                                    onClick={closeModal}
                                 >
                                     Cancelar
                                 </Button>
-                                <Button
-                                    type="submit"
-                                    size="lg"
-                                    disabled={isSubmitting}
-                                >
-                                    {isSubmitting && (
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    )}
-                                    Cadastrar Munícipe
-                                </Button>
+                                <SubmitBtn
+                                    label="Cadastrar Munícipe"
+                                    isSubmitting={isSubmitting}
+                                />
                             </DialogFooter>
                         </form>
                     </Form>
                 </DialogContent>
             </Dialog>
 
-            {/* ==================== MODAL DE VISUALIZAÇÃO COMPLETO ==================== */}
-            <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
-                <DialogContent className="max-h-[90vh] max-w-6xl overflow-y-auto">
+            {/* ══════════════════════════════════════════ MODAL: EDITAR ══════════════════════════════════════════ */}
+            <Dialog
+                open={modal === 'edit'}
+                onOpenChange={(o) => !o && closeModal()}
+            >
+                <DialogContent className="max-h-[92vh] min-w-6xl overflow-y-auto">
                     <DialogHeader>
-                        <DialogTitle className="flex items-center gap-3 text-2xl">
-                            <div className="rounded-full bg-primary/10 p-2">
-                                <User className="h-6 w-6 text-primary" />
-                            </div>
-                            {selectedMunicipe?.nome_completo}
+                        <DialogTitle className="text-xl">
+                            Editar Munícipe
                         </DialogTitle>
                         <DialogDescription>
-                            Detalhes completos do munícipe • Código: #
-                            {selectedMunicipe?.id}
+                            A actualizar:{' '}
+                            <span className="font-medium">
+                                {selected?.nome_completo}
+                            </span>
                         </DialogDescription>
                     </DialogHeader>
-                    <Separator className="my-4" />
-                    {selectedMunicipe && (
-                        <Tabs
-                            value={activeTab}
-                            onValueChange={setActiveTab}
-                            className="w-full"
+                    <Separator />
+                    <Form {...form}>
+                        <form
+                            onSubmit={form.handleSubmit(onEditSubmit)}
+                            className="space-y-6"
                         >
-                            <TabsList className="grid h-12 w-full grid-cols-5">
-                                <TabsTrigger value="pessoal" className="gap-2">
-                                    <User className="h-4 w-4" />
-                                    Pessoais
-                                </TabsTrigger>
-                                <TabsTrigger
-                                    value="biografico"
-                                    className="gap-2"
+                            <MunicipeFormFields f={form} />
+                            <DialogFooter>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={closeModal}
                                 >
-                                    <FileText className="h-4 w-4" />
-                                    Biográficos
-                                </TabsTrigger>
-                                <TabsTrigger
-                                    value="complementar"
-                                    className="gap-2"
-                                >
-                                    <Briefcase className="h-4 w-4" />
-                                    Complementares
-                                </TabsTrigger>
-                                <TabsTrigger value="endereco" className="gap-2">
-                                    <Home className="h-4 w-4" />
-                                    Endereço
-                                </TabsTrigger>
-                                <TabsTrigger
-                                    value="recrutamento"
-                                    className="gap-2"
-                                >
-                                    <Users className="h-4 w-4" />
-                                    Recrutamento
-                                </TabsTrigger>
+                                    Cancelar
+                                </Button>
+                                <SubmitBtn
+                                    label="Guardar Alterações"
+                                    isSubmitting={isSubmitting}
+                                />
+                            </DialogFooter>
+                        </form>
+                    </Form>
+                </DialogContent>
+            </Dialog>
+
+            {/* ══════════════════════════════════════════ MODAL: VER DETALHES ══════════════════════════════════════════ */}
+            <Dialog
+                open={modal === 'view'}
+                onOpenChange={(o) => !o && closeModal()}
+            >
+                <DialogContent className="max-h-[92vh] min-w-6xl overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-3 text-xl">
+                            <div
+                                className={`flex h-10 w-10 items-center justify-center rounded-full font-bold text-white ${selected?.sexo === 'M' ? 'bg-blue-500' : 'bg-pink-500'}`}
+                            >
+                                {selected?.nome_completo.charAt(0)}
+                            </div>
+                            <div>
+                                <p>{selected?.nome_completo}</p>
+                                <p className="text-sm font-normal text-muted-foreground">
+                                    Código #{selected?.id}
+                                </p>
+                            </div>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="ml-auto gap-2"
+                                onClick={() =>
+                                    selected && downloadPdf(selected)
+                                }
+                            >
+                                <FileDown className="h-4 w-4" /> Exportar PDF
+                            </Button>
+                        </DialogTitle>
+                    </DialogHeader>
+                    <Separator />
+
+                    {selected && (
+                        <Tabs value={activeTab} onValueChange={setActiveTab}>
+                            <TabsList className="grid h-auto w-full grid-cols-5">
+                                {[
+                                    {
+                                        val: 'pessoal',
+                                        label: 'Pessoais',
+                                        icon: User,
+                                    },
+                                    {
+                                        val: 'biografico',
+                                        label: 'Biográficos',
+                                        icon: FileText,
+                                    },
+                                    {
+                                        val: 'complementar',
+                                        label: 'Complementares',
+                                        icon: Briefcase,
+                                    },
+                                    {
+                                        val: 'endereco',
+                                        label: 'Endereço',
+                                        icon: Home,
+                                    },
+                                    {
+                                        val: 'recrutamento',
+                                        label: 'Recrutamento',
+                                        icon: Users,
+                                    },
+                                ].map(({ val, label, icon: Icon }) => (
+                                    <TabsTrigger
+                                        key={val}
+                                        value={val}
+                                        className="gap-1.5 py-2 text-xs"
+                                    >
+                                        <Icon className="h-3.5 w-3.5" />
+                                        {label}
+                                    </TabsTrigger>
+                                ))}
                             </TabsList>
 
-                            {/* Dados Pessoais */}
-                            <TabsContent value="pessoal" className="pt-6">
-                                <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                            {/* PESSOAIS */}
+                            <TabsContent
+                                value="pessoal"
+                                className="space-y-4 pt-4"
+                            >
+                                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                                     <Card>
-                                        <CardHeader className="pb-3">
-                                            <CardTitle className="text-sm font-medium text-muted-foreground">
+                                        <CardContent className="space-y-3 pt-5">
+                                            <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                                                 Informações Pessoais
-                                            </CardTitle>
-                                        </CardHeader>
-                                        <CardContent className="space-y-2">
-                                            <div className="flex justify-between">
-                                                <span className="text-muted-foreground">
-                                                    Data Nascimento:
-                                                </span>
-                                                <span className="font-medium">
-                                                    {format(
-                                                        new Date(
-                                                            selectedMunicipe.data_nascimento,
-                                                        ),
-                                                        'dd/MM/yyyy',
-                                                    )}
-                                                </span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-muted-foreground">
-                                                    Idade:
-                                                </span>
-                                                <span className="font-medium">
-                                                    {new Date().getFullYear() -
-                                                        new Date(
-                                                            selectedMunicipe.data_nascimento,
-                                                        ).getFullYear()}{' '}
-                                                    anos
-                                                </span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-muted-foreground">
-                                                    Sexo:
-                                                </span>
-                                                <Badge
-                                                    variant={
-                                                        selectedMunicipe.sexo ===
-                                                        'M'
-                                                            ? 'default'
-                                                            : 'secondary'
-                                                    }
-                                                >
-                                                    {selectedMunicipe.sexo ===
-                                                    'M'
+                                            </p>
+                                            {[
+                                                [
+                                                    'Nascimento',
+                                                    formatDate(
+                                                        selected.data_nascimento,
+                                                    ),
+                                                ],
+                                                [
+                                                    'Idade',
+                                                    `${calcularIdade(selected.data_nascimento)} anos`,
+                                                ],
+                                                [
+                                                    'Sexo',
+                                                    selected.sexo === 'M'
                                                         ? 'Masculino'
-                                                        : 'Feminino'}
-                                                </Badge>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-muted-foreground">
-                                                    Estado Civil:
-                                                </span>
-                                                <span>
-                                                    {selectedMunicipe.estado_civil ||
-                                                        'Não informado'}
-                                                </span>
-                                            </div>
-                                        </CardContent>
-                                    </Card>
-
-                                    <Card>
-                                        <CardHeader className="pb-3">
-                                            <CardTitle className="text-sm font-medium text-muted-foreground">
-                                                Documentação
-                                            </CardTitle>
-                                        </CardHeader>
-                                        <CardContent className="space-y-2">
-                                            <div className="flex justify-between">
-                                                <span className="text-muted-foreground">
-                                                    BI Número:
-                                                </span>
-                                                <span className="font-mono">
-                                                    {selectedMunicipe.bi_numero ||
-                                                        '—'}
-                                                </span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-muted-foreground">
-                                                    Validade:
-                                                </span>
-                                                <span>
-                                                    {selectedMunicipe.bi_data_validade
-                                                        ? format(
-                                                              new Date(
-                                                                  selectedMunicipe.bi_data_validade,
-                                                              ),
-                                                              'dd/MM/yyyy',
-                                                          )
-                                                        : '—'}
-                                                </span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-muted-foreground">
-                                                    Naturalidade:
-                                                </span>
-                                                <span>
-                                                    {selectedMunicipe.naturalidade ||
-                                                        '—'}
-                                                </span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-muted-foreground">
-                                                    Município:
-                                                </span>
-                                                <span>
-                                                    {selectedMunicipe
-                                                        .municipio_naturalidade
-                                                        ?.nome || '—'}
-                                                </span>
-                                            </div>
-                                        </CardContent>
-                                    </Card>
-
-                                    <Card>
-                                        <CardHeader className="pb-3">
-                                            <CardTitle className="text-sm font-medium text-muted-foreground">
-                                                Contactos
-                                            </CardTitle>
-                                        </CardHeader>
-                                        <CardContent className="space-y-2">
-                                            <div className="flex justify-between">
-                                                <span className="text-muted-foreground">
-                                                    Telefone:
-                                                </span>
-                                                <span>
-                                                    {selectedMunicipe.telefone ||
-                                                        '—'}
-                                                </span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-muted-foreground">
-                                                    Celular:
-                                                </span>
-                                                <span>
-                                                    {selectedMunicipe.celular ||
-                                                        '—'}
-                                                </span>
-                                            </div>
-                                        </CardContent>
-                                    </Card>
-
-                                    <Card className="md:col-span-2 lg:col-span-3">
-                                        <CardHeader className="pb-3">
-                                            <CardTitle className="text-sm font-medium text-muted-foreground">
-                                                Progenitores
-                                            </CardTitle>
-                                        </CardHeader>
-                                        <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                                            <div className="flex items-center justify-between rounded-lg bg-muted/30 p-3">
-                                                <div className="flex items-center gap-2">
-                                                    <Heart className="h-4 w-4 text-blue-500" />
-                                                    <span className="font-medium">
-                                                        Pai:
-                                                    </span>
-                                                </div>
-                                                <span>
-                                                    {selectedMunicipe.pai
-                                                        ?.nome_completo ||
-                                                        'Não informado'}
-                                                </span>
-                                            </div>
-                                            <div className="flex items-center justify-between rounded-lg bg-muted/30 p-3">
-                                                <div className="flex items-center gap-2">
-                                                    <Heart className="h-4 w-4 text-pink-500" />
-                                                    <span className="font-medium">
-                                                        Mãe:
-                                                    </span>
-                                                </div>
-                                                <span>
-                                                    {selectedMunicipe.mae
-                                                        ?.nome_completo ||
-                                                        'Não informado'}
-                                                </span>
-                                            </div>
-                                        </CardContent>
-                                    </Card>
-                                </div>
-                            </TabsContent>
-
-                            {/* Dados Biográficos */}
-                            <TabsContent value="biografico" className="pt-6">
-                                {selectedMunicipe.dados_biograficos ? (
-                                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                                        <Card>
-                                            <CardContent className="pt-6">
-                                                <div className="space-y-2">
-                                                    <p className="text-sm text-muted-foreground">
-                                                        NIP
-                                                    </p>
-                                                    <p className="font-medium">
-                                                        {selectedMunicipe
-                                                            .dados_biograficos
-                                                            .nip || '—'}
-                                                    </p>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                        <Card>
-                                            <CardContent className="pt-6">
-                                                <div className="space-y-2">
-                                                    <p className="text-sm text-muted-foreground">
-                                                        Assento Número
-                                                    </p>
-                                                    <p className="font-medium">
-                                                        {selectedMunicipe
-                                                            .dados_biograficos
-                                                            .assento_numero ||
-                                                            '—'}
-                                                    </p>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                        <Card>
-                                            <CardContent className="pt-6">
-                                                <div className="space-y-2">
-                                                    <p className="text-sm text-muted-foreground">
-                                                        Registo Civil
-                                                    </p>
-                                                    <p className="font-medium">
-                                                        {selectedMunicipe
-                                                            .dados_biograficos
-                                                            .registro_civil ||
-                                                            '—'}
-                                                    </p>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                        <Card>
-                                            <CardContent className="pt-6">
-                                                <div className="space-y-2">
-                                                    <p className="text-sm text-muted-foreground">
-                                                        Nº Registo
-                                                    </p>
-                                                    <p className="font-medium">
-                                                        {selectedMunicipe
-                                                            .dados_biograficos
-                                                            .registro_numero ||
-                                                            '—'}
-                                                    </p>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                        <Card>
-                                            <CardContent className="pt-6">
-                                                <div className="space-y-2">
-                                                    <p className="text-sm text-muted-foreground">
-                                                        Nº Cédula
-                                                    </p>
-                                                    <p className="font-medium">
-                                                        {selectedMunicipe
-                                                            .dados_biograficos
-                                                            .cedula_numero ||
-                                                            '—'}
-                                                    </p>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                        <Card>
-                                            <CardContent className="pt-6">
-                                                <div className="space-y-2">
-                                                    <p className="text-sm text-muted-foreground">
-                                                        Nº Filhos
-                                                    </p>
-                                                    <p className="font-medium">
-                                                        {selectedMunicipe
-                                                            .dados_biograficos
-                                                            .numero_filhos ?? 0}
-                                                    </p>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                        <Card>
-                                            <CardContent className="pt-6">
-                                                <div className="space-y-2">
-                                                    <p className="text-sm text-muted-foreground">
-                                                        Vencimento
-                                                    </p>
-                                                    <p className="font-medium">
-                                                        {selectedMunicipe
-                                                            .dados_biograficos
-                                                            .vencimento
-                                                            ? `${selectedMunicipe.dados_biograficos.vencimento.toLocaleString()} Kz`
-                                                            : '—'}
-                                                    </p>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                        <Card>
-                                            <CardContent className="pt-6">
-                                                <div className="space-y-2">
-                                                    <p className="text-sm text-muted-foreground">
-                                                        Ramo Actividade
-                                                    </p>
-                                                    <p className="font-medium">
-                                                        {selectedMunicipe
-                                                            .dados_biograficos
-                                                            .ramo_actividade ||
-                                                            '—'}
-                                                    </p>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                        <Card>
-                                            <CardContent className="pt-6">
-                                                <div className="space-y-2">
-                                                    <p className="text-sm text-muted-foreground">
-                                                        Ramo
-                                                    </p>
-                                                    <p className="font-medium">
-                                                        {selectedMunicipe
-                                                            .dados_biograficos
-                                                            .ramo || '—'}
-                                                    </p>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                        <Card>
-                                            <CardContent className="pt-6">
-                                                <div className="space-y-2">
-                                                    <p className="text-sm text-muted-foreground">
-                                                        Ano Incorporação
-                                                    </p>
-                                                    <p className="font-medium">
-                                                        {selectedMunicipe
-                                                            .dados_biograficos
-                                                            .ano_incorporacao ||
-                                                            '—'}
-                                                    </p>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                        <Card>
-                                            <CardContent className="pt-6">
-                                                <div className="space-y-2">
-                                                    <p className="text-sm text-muted-foreground">
-                                                        Ano Abandono
-                                                    </p>
-                                                    <p className="font-medium">
-                                                        {selectedMunicipe
-                                                            .dados_biograficos
-                                                            .ano_abandono ||
-                                                            '—'}
-                                                    </p>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                        <Card>
-                                            <CardContent className="pt-6">
-                                                <div className="space-y-2">
-                                                    <p className="text-sm text-muted-foreground">
-                                                        Anos Serviço
-                                                    </p>
-                                                    <p className="font-medium">
-                                                        {selectedMunicipe
-                                                            .dados_biograficos
-                                                            .ano_servico ?? '—'}
-                                                    </p>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                        <Card>
-                                            <CardContent className="pt-6">
-                                                <div className="space-y-2">
-                                                    <p className="text-sm text-muted-foreground">
-                                                        Modo de Vida
-                                                    </p>
-                                                    <p className="font-medium">
-                                                        {selectedMunicipe
-                                                            .dados_biograficos
-                                                            .modo_vida || '—'}
-                                                    </p>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                    </div>
-                                ) : (
-                                    <div className="flex flex-col items-center justify-center py-12 text-center">
-                                        <FileText className="mb-4 h-16 w-16 text-muted-foreground" />
-                                        <p className="text-lg font-medium">
-                                            Nenhum dado biográfico registado
-                                        </p>
-                                        <p className="mt-1 text-sm text-muted-foreground">
-                                            Clique no botão abaixo para
-                                            adicionar
-                                        </p>
-                                        <Button
-                                            onClick={() =>
-                                                openBiograficoModal(
-                                                    selectedMunicipe,
-                                                )
-                                            }
-                                            className="mt-4 gap-2"
-                                        >
-                                            <Plus className="h-4 w-4" />{' '}
-                                            Adicionar Dados Biográficos
-                                        </Button>
-                                    </div>
-                                )}
-                            </TabsContent>
-
-                            {/* Dados Complementares */}
-                            <TabsContent value="complementar" className="pt-6">
-                                {selectedMunicipe.dados_complementares ? (
-                                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                                        <Card>
-                                            <CardContent className="pt-6">
-                                                <div className="space-y-2">
-                                                    <p className="text-sm text-muted-foreground">
-                                                        Caixa Postal
-                                                    </p>
-                                                    <p className="font-medium">
-                                                        {selectedMunicipe
-                                                            .dados_complementares
-                                                            .caixa_postal ||
-                                                            '—'}
-                                                    </p>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                        <Card>
-                                            <CardContent className="pt-6">
-                                                <div className="space-y-2">
-                                                    <p className="text-sm text-muted-foreground">
-                                                        NIF
-                                                    </p>
-                                                    <p className="font-medium">
-                                                        {selectedMunicipe
-                                                            .dados_complementares
-                                                            .nif || '—'}
-                                                    </p>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                        <Card>
-                                            <CardContent className="pt-6">
-                                                <div className="space-y-2">
-                                                    <p className="text-sm text-muted-foreground">
-                                                        Encargos Familiares
-                                                    </p>
-                                                    <p className="font-medium">
-                                                        {selectedMunicipe
-                                                            .dados_complementares
-                                                            .encargo_familiar ??
-                                                            0}
-                                                    </p>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                        <Card>
-                                            <CardContent className="pt-6">
-                                                <div className="space-y-2">
-                                                    <p className="text-sm text-muted-foreground">
-                                                        Habilitação Literária
-                                                    </p>
-                                                    <p className="font-medium">
-                                                        {selectedMunicipe
-                                                            .dados_complementares
-                                                            .habilitacao_literaria ||
-                                                            '—'}
-                                                    </p>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                        <Card>
-                                            <CardContent className="pt-6">
-                                                <div className="space-y-2">
-                                                    <p className="text-sm text-muted-foreground">
-                                                        Profissão
-                                                    </p>
-                                                    <p className="font-medium">
-                                                        {selectedMunicipe
-                                                            .dados_complementares
-                                                            .profissao || '—'}
-                                                    </p>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                        <Card>
-                                            <CardContent className="pt-6">
-                                                <div className="space-y-2">
-                                                    <p className="text-sm text-muted-foreground">
-                                                        Nº Irmãos
-                                                    </p>
-                                                    <p className="font-medium">
-                                                        {selectedMunicipe
-                                                            .dados_complementares
-                                                            .numero_irmaos ?? 0}
-                                                    </p>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                        <Card>
-                                            <CardContent className="pt-6">
-                                                <div className="space-y-2">
-                                                    <p className="text-sm text-muted-foreground">
-                                                        Entidade Emissora BI
-                                                    </p>
-                                                    <p className="font-medium">
-                                                        {selectedMunicipe
-                                                            .dados_complementares
-                                                            .entidade_emissora_bi ||
-                                                            '—'}
-                                                    </p>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                        <Card>
-                                            <CardContent className="pt-6">
-                                                <div className="space-y-2">
-                                                    <p className="text-sm text-muted-foreground">
-                                                        Nº Carta Condução
-                                                    </p>
-                                                    <p className="font-medium">
-                                                        {selectedMunicipe
-                                                            .dados_complementares
-                                                            .numero_carta_conducao ||
-                                                            '—'}
-                                                    </p>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                        <Card>
-                                            <CardContent className="pt-6">
-                                                <div className="space-y-2">
-                                                    <p className="text-sm text-muted-foreground">
-                                                        Data Emissão Carta
-                                                    </p>
-                                                    <p className="font-medium">
-                                                        {selectedMunicipe
-                                                            .dados_complementares
-                                                            .data_emissao_carta
-                                                            ? format(
-                                                                  new Date(
-                                                                      selectedMunicipe
-                                                                          .dados_complementares
-                                                                          .data_emissao_carta,
-                                                                  ),
-                                                                  'dd/MM/yyyy',
-                                                              )
-                                                            : '—'}
-                                                    </p>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                        <Card>
-                                            <CardContent className="pt-6">
-                                                <div className="space-y-2">
-                                                    <p className="text-sm text-muted-foreground">
-                                                        Data Validade Carta
-                                                    </p>
-                                                    <p className="font-medium">
-                                                        {selectedMunicipe
-                                                            .dados_complementares
-                                                            .data_validade_carta
-                                                            ? format(
-                                                                  new Date(
-                                                                      selectedMunicipe
-                                                                          .dados_complementares
-                                                                          .data_validade_carta,
-                                                                  ),
-                                                                  'dd/MM/yyyy',
-                                                              )
-                                                            : '—'}
-                                                    </p>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                        <Card>
-                                            <CardContent className="pt-6">
-                                                <div className="space-y-2">
-                                                    <p className="text-sm text-muted-foreground">
-                                                        Atributo
-                                                    </p>
-                                                    <p className="font-medium">
-                                                        {selectedMunicipe
-                                                            .dados_complementares
-                                                            .atributo || '—'}
-                                                    </p>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                    </div>
-                                ) : (
-                                    <div className="flex flex-col items-center justify-center py-12 text-center">
-                                        <Briefcase className="mb-4 h-16 w-16 text-muted-foreground" />
-                                        <p className="text-lg font-medium">
-                                            Nenhum dado complementar registado
-                                        </p>
-                                        <p className="mt-1 text-sm text-muted-foreground">
-                                            Clique no botão abaixo para
-                                            adicionar
-                                        </p>
-                                        <Button
-                                            onClick={() =>
-                                                openComplementarModal(
-                                                    selectedMunicipe,
-                                                )
-                                            }
-                                            className="mt-4 gap-2"
-                                        >
-                                            <Plus className="h-4 w-4" />{' '}
-                                            Adicionar Dados Complementares
-                                        </Button>
-                                    </div>
-                                )}
-                            </TabsContent>
-
-                            {/* Endereço */}
-                            <TabsContent value="endereco" className="pt-6">
-                                {selectedMunicipe.endereco ? (
-                                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                                        <Card>
-                                            <CardContent className="pt-6">
-                                                <div className="space-y-2">
-                                                    <p className="text-sm text-muted-foreground">
-                                                        Morada
-                                                    </p>
-                                                    <p className="font-medium">
-                                                        {selectedMunicipe
-                                                            .endereco.morada ||
-                                                            '—'}
-                                                    </p>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                        <Card>
-                                            <CardContent className="pt-6">
-                                                <div className="space-y-2">
-                                                    <p className="text-sm text-muted-foreground">
-                                                        Localidade
-                                                    </p>
-                                                    <p className="font-medium">
-                                                        {selectedMunicipe
-                                                            .endereco
-                                                            .localidade || '—'}
-                                                    </p>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                        <Card>
-                                            <CardContent className="pt-6">
-                                                <div className="space-y-2">
-                                                    <p className="text-sm text-muted-foreground">
-                                                        Comuna
-                                                    </p>
-                                                    <p className="font-medium">
-                                                        {selectedMunicipe
-                                                            .endereco.comuna ||
-                                                            '—'}
-                                                    </p>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                        <Card>
-                                            <CardContent className="pt-6">
-                                                <div className="space-y-2">
-                                                    <p className="text-sm text-muted-foreground">
-                                                        Província / Município
-                                                    </p>
-                                                    <p className="font-medium">
-                                                        {
-                                                            selectedMunicipe
-                                                                .endereco
-                                                                .provincia?.nome
-                                                        }{' '}
-                                                        /{' '}
-                                                        {
-                                                            selectedMunicipe
-                                                                .endereco
-                                                                .municipio?.nome
-                                                        }
-                                                    </p>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                    </div>
-                                ) : (
-                                    <div className="flex flex-col items-center justify-center py-12 text-center">
-                                        <MapPin className="mb-4 h-16 w-16 text-muted-foreground" />
-                                        <p className="text-lg font-medium">
-                                            Nenhum endereço registado
-                                        </p>
-                                        <p className="mt-1 text-sm text-muted-foreground">
-                                            Clique no botão abaixo para
-                                            adicionar
-                                        </p>
-                                        <Button
-                                            onClick={() =>
-                                                openEnderecoModal(
-                                                    selectedMunicipe,
-                                                )
-                                            }
-                                            className="mt-4 gap-2"
-                                        >
-                                            <Plus className="h-4 w-4" />{' '}
-                                            Adicionar Endereço
-                                        </Button>
-                                    </div>
-                                )}
-                            </TabsContent>
-
-                            {/* Recrutamento */}
-                            <TabsContent value="recrutamento" className="pt-6">
-                                <div className="mb-4 flex items-center justify-between">
-                                    <h4 className="text-lg font-semibold">
-                                        Histórico de Recrutamento
-                                    </h4>
-                                    <Button
-                                        size="sm"
-                                        onClick={() =>
-                                            openRecrutamentoModal(
-                                                selectedMunicipe,
-                                            )
-                                        }
-                                        className="gap-2"
-                                    >
-                                        <Plus className="h-4 w-4" /> Novo
-                                        Recrutamento
-                                    </Button>
-                                </div>
-                                {selectedMunicipe.recrutamentos &&
-                                selectedMunicipe.recrutamentos.length > 0 ? (
-                                    <div className="space-y-3">
-                                        {selectedMunicipe.recrutamentos.map(
-                                            (rec) => (
-                                                <Card
-                                                    key={rec.id}
-                                                    className="transition-shadow hover:shadow-md"
+                                                        : 'Feminino',
+                                                ],
+                                                [
+                                                    'Estado Civil',
+                                                    selected.estado_civil ||
+                                                        '—',
+                                                ],
+                                                [
+                                                    'Naturalidade',
+                                                    selected.naturalidade ||
+                                                        '—',
+                                                ],
+                                            ].map(([k, v]) => (
+                                                <div
+                                                    key={k}
+                                                    className="flex items-center justify-between text-sm"
                                                 >
-                                                    <CardContent className="p-4">
-                                                        <div className="flex items-start justify-between">
-                                                            <div className="space-y-1">
-                                                                <div className="flex items-center gap-2">
-                                                                    <Calendar className="h-4 w-4 text-muted-foreground" />
-                                                                    <span className="font-medium">
-                                                                        {format(
-                                                                            new Date(
-                                                                                rec.data_recruta,
-                                                                            ),
-                                                                            'dd/MM/yyyy',
-                                                                        )}
-                                                                    </span>
-                                                                </div>
-                                                                {rec.observacoes && (
-                                                                    <p className="text-sm text-muted-foreground">
-                                                                        {
-                                                                            rec.observacoes
-                                                                        }
-                                                                    </p>
-                                                                )}
-                                                            </div>
-                                                            <div>
-                                                                {rec.estado ===
-                                                                    0 && (
-                                                                    <Badge
-                                                                        variant="secondary"
-                                                                        className="gap-1"
-                                                                    >
-                                                                        <Clock className="h-3 w-3" />
-                                                                        Pendente
-                                                                    </Badge>
-                                                                )}
-                                                                {rec.estado ===
-                                                                    1 && (
-                                                                    <Badge className="gap-1 bg-green-500">
-                                                                        <CheckCircle className="h-3 w-3" />
-                                                                        Aprovado
-                                                                    </Badge>
-                                                                )}
-                                                                {rec.estado ===
-                                                                    2 && (
-                                                                    <Badge
-                                                                        variant="destructive"
-                                                                        className="gap-1"
-                                                                    >
-                                                                        <AlertCircle className="h-3 w-3" />
-                                                                        Rejeitado
-                                                                    </Badge>
-                                                                )}
-                                                            </div>
-                                                        </div>
+                                                    <span className="text-muted-foreground">
+                                                        {k}
+                                                    </span>
+                                                    <span className="font-medium">
+                                                        {v}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </CardContent>
+                                    </Card>
+                                    <Card>
+                                        <CardContent className="space-y-3 pt-5">
+                                            <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                                                Documentação
+                                            </p>
+                                            {[
+                                                [
+                                                    'Nº BI',
+                                                    selected.bi_numero || '—',
+                                                ],
+                                                [
+                                                    'Emissão',
+                                                    formatDate(
+                                                        selected.bi_data_emissao,
+                                                    ),
+                                                ],
+                                                [
+                                                    'Validade',
+                                                    formatDate(
+                                                        selected.bi_data_validade,
+                                                    ),
+                                                ],
+                                                [
+                                                    'Município',
+                                                    selected
+                                                        .municipio_naturalidade
+                                                        ?.nome || '—',
+                                                ],
+                                            ].map(([k, v]) => (
+                                                <div
+                                                    key={k}
+                                                    className="flex items-center justify-between text-sm"
+                                                >
+                                                    <span className="text-muted-foreground">
+                                                        {k}
+                                                    </span>
+                                                    <span className="font-mono font-medium">
+                                                        {v}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </CardContent>
+                                    </Card>
+                                    <Card>
+                                        <CardContent className="space-y-3 pt-5">
+                                            <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                                                Contactos
+                                            </p>
+                                            {[
+                                                [
+                                                    'Telefone',
+                                                    selected.telefone || '—',
+                                                ],
+                                                [
+                                                    'Celular',
+                                                    selected.celular || '—',
+                                                ],
+                                            ].map(([k, v]) => (
+                                                <div
+                                                    key={k}
+                                                    className="flex items-center justify-between text-sm"
+                                                >
+                                                    <span className="text-muted-foreground">
+                                                        {k}
+                                                    </span>
+                                                    <span className="font-medium">
+                                                        {v}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </CardContent>
+                                    </Card>
+                                    <Card className="sm:col-span-2 lg:col-span-3">
+                                        <CardContent className="pt-5">
+                                            <p className="mb-3 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                                                Progenitores
+                                            </p>
+                                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                                <div className="flex items-center gap-3 rounded-lg border p-3">
+                                                    <Heart className="h-4 w-4 shrink-0 text-blue-500" />
+                                                    <div>
+                                                        <p className="text-xs text-muted-foreground">
+                                                            Pai
+                                                        </p>
+                                                        <p className="text-sm font-medium">
+                                                            {selected.pai
+                                                                ?.nome_completo ||
+                                                                'Não informado'}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-3 rounded-lg border p-3">
+                                                    <Heart className="h-4 w-4 shrink-0 text-pink-500" />
+                                                    <div>
+                                                        <p className="text-xs text-muted-foreground">
+                                                            Mãe
+                                                        </p>
+                                                        <p className="text-sm font-medium">
+                                                            {selected.mae
+                                                                ?.nome_completo ||
+                                                                'Não informado'}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </CardContent>
+                                    </Card>
+                                </div>
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="gap-1"
+                                    onClick={() => openEdit(selected)}
+                                >
+                                    <Edit className="h-3 w-3" />
+                                    Editar dados pessoais
+                                </Button>
+                            </TabsContent>
+
+                            {/* BIOGRÁFICOS */}
+                            <TabsContent value="biografico" className="pt-4">
+                                {selected.dados_biograficos ? (
+                                    <>
+                                        <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                            {[
+                                                [
+                                                    'NIP',
+                                                    selected.dados_biograficos
+                                                        .nip,
+                                                ],
+                                                [
+                                                    'Assento Nº',
+                                                    selected.dados_biograficos
+                                                        .assento_numero,
+                                                ],
+                                                [
+                                                    'Registo Civil',
+                                                    selected.dados_biograficos
+                                                        .registro_civil,
+                                                ],
+                                                [
+                                                    'Nº Registo',
+                                                    selected.dados_biograficos
+                                                        .registro_numero,
+                                                ],
+                                                [
+                                                    'Nº Cédula',
+                                                    selected.dados_biograficos
+                                                        .cedula_numero,
+                                                ],
+                                                [
+                                                    'Nº Filhos',
+                                                    selected.dados_biograficos
+                                                        .numero_filhos ?? 0,
+                                                ],
+                                                [
+                                                    'Vencimento',
+                                                    selected.dados_biograficos
+                                                        .vencimento
+                                                        ? `${Number(selected.dados_biograficos.vencimento).toLocaleString('pt-AO')} Kz`
+                                                        : null,
+                                                ],
+                                                [
+                                                    'Ramo Actividade',
+                                                    selected.dados_biograficos
+                                                        .ramo_actividade,
+                                                ],
+                                                [
+                                                    'Ramo',
+                                                    selected.dados_biograficos
+                                                        .ramo,
+                                                ],
+                                                [
+                                                    'Ano Incorporação',
+                                                    selected.dados_biograficos
+                                                        .ano_incorporacao,
+                                                ],
+                                                [
+                                                    'Ano Abandono',
+                                                    selected.dados_biograficos
+                                                        .ano_abandono,
+                                                ],
+                                                [
+                                                    'Anos Serviço',
+                                                    selected.dados_biograficos
+                                                        .ano_servico,
+                                                ],
+                                                [
+                                                    'Modo de Vida',
+                                                    selected.dados_biograficos
+                                                        .modo_vida,
+                                                ],
+                                            ].map(([k, v]) => (
+                                                <Card key={String(k)}>
+                                                    <CardContent className="pt-4 pb-4">
+                                                        <p className="text-xs text-muted-foreground">
+                                                            {k}
+                                                        </p>
+                                                        <p className="mt-1 font-semibold">
+                                                            {v ?? '—'}
+                                                        </p>
                                                     </CardContent>
                                                 </Card>
-                                            ),
-                                        )}
+                                            ))}
+                                        </div>
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() =>
+                                                openBiografico(selected)
+                                            }
+                                            className="gap-1"
+                                        >
+                                            <Edit className="h-3 w-3" />
+                                            Editar
+                                        </Button>
+                                    </>
+                                ) : (
+                                    <EmptyState
+                                        icon={FileText}
+                                        label="Nenhum dado biográfico registado"
+                                    >
+                                        <Button
+                                            onClick={() =>
+                                                openBiografico(selected)
+                                            }
+                                            className="gap-2"
+                                        >
+                                            <Plus className="h-4 w-4" />
+                                            Adicionar
+                                        </Button>
+                                    </EmptyState>
+                                )}
+                            </TabsContent>
+
+                            {/* COMPLEMENTARES */}
+                            <TabsContent value="complementar" className="pt-4">
+                                {selected.dados_complementares ? (
+                                    <>
+                                        <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                            {[
+                                                [
+                                                    'Caixa Postal',
+                                                    selected
+                                                        .dados_complementares
+                                                        .caixa_postal,
+                                                ],
+                                                [
+                                                    'NIF',
+                                                    selected
+                                                        .dados_complementares
+                                                        .nif,
+                                                ],
+                                                [
+                                                    'Encargos Familiares',
+                                                    selected
+                                                        .dados_complementares
+                                                        .encargo_familiar ?? 0,
+                                                ],
+                                                [
+                                                    'Habilitação',
+                                                    selected
+                                                        .dados_complementares
+                                                        .habilitacao_literaria,
+                                                ],
+                                                [
+                                                    'Profissão',
+                                                    selected
+                                                        .dados_complementares
+                                                        .profissao,
+                                                ],
+                                                [
+                                                    'Nº Irmãos',
+                                                    selected
+                                                        .dados_complementares
+                                                        .numero_irmaos ?? 0,
+                                                ],
+                                                [
+                                                    'Entidade Emissora BI',
+                                                    selected
+                                                        .dados_complementares
+                                                        .entidade_emissora_bi,
+                                                ],
+                                                [
+                                                    'Nº Carta Condução',
+                                                    selected
+                                                        .dados_complementares
+                                                        .numero_carta_conducao,
+                                                ],
+                                                [
+                                                    'Emissão Carta',
+                                                    formatDate(
+                                                        selected
+                                                            .dados_complementares
+                                                            .data_emissao_carta,
+                                                    ),
+                                                ],
+                                                [
+                                                    'Validade Carta',
+                                                    formatDate(
+                                                        selected
+                                                            .dados_complementares
+                                                            .data_validade_carta,
+                                                    ),
+                                                ],
+                                                [
+                                                    'Atributo',
+                                                    selected
+                                                        .dados_complementares
+                                                        .atributo,
+                                                ],
+                                            ].map(([k, v]) => (
+                                                <Card key={String(k)}>
+                                                    <CardContent className="pt-4 pb-4">
+                                                        <p className="text-xs text-muted-foreground">
+                                                            {k}
+                                                        </p>
+                                                        <p className="mt-1 font-semibold">
+                                                            {v ?? '—'}
+                                                        </p>
+                                                    </CardContent>
+                                                </Card>
+                                            ))}
+                                        </div>
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() =>
+                                                openComplementar(selected)
+                                            }
+                                            className="gap-1"
+                                        >
+                                            <Edit className="h-3 w-3" />
+                                            Editar
+                                        </Button>
+                                    </>
+                                ) : (
+                                    <EmptyState
+                                        icon={Briefcase}
+                                        label="Nenhum dado complementar registado"
+                                    >
+                                        <Button
+                                            onClick={() =>
+                                                openComplementar(selected)
+                                            }
+                                            className="gap-2"
+                                        >
+                                            <Plus className="h-4 w-4" />
+                                            Adicionar
+                                        </Button>
+                                    </EmptyState>
+                                )}
+                            </TabsContent>
+
+                            {/* ENDEREÇO */}
+                            <TabsContent value="endereco" className="pt-4">
+                                {selected.endereco ? (
+                                    <>
+                                        <div className="mb-4 grid gap-3 sm:grid-cols-2">
+                                            {[
+                                                [
+                                                    'Morada',
+                                                    selected.endereco.morada,
+                                                ],
+                                                [
+                                                    'Localidade',
+                                                    selected.endereco
+                                                        .localidade,
+                                                ],
+                                                [
+                                                    'Comuna',
+                                                    selected.endereco.comuna,
+                                                ],
+                                                [
+                                                    'Província',
+                                                    selected.endereco.provincia
+                                                        ?.nome,
+                                                ],
+                                                [
+                                                    'Município',
+                                                    selected.endereco.municipio
+                                                        ?.nome,
+                                                ],
+                                            ].map(([k, v]) => (
+                                                <Card key={String(k)}>
+                                                    <CardContent className="pt-4 pb-4">
+                                                        <p className="text-xs text-muted-foreground">
+                                                            {k}
+                                                        </p>
+                                                        <p className="mt-1 font-semibold">
+                                                            {v || '—'}
+                                                        </p>
+                                                    </CardContent>
+                                                </Card>
+                                            ))}
+                                        </div>
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() =>
+                                                openEndereco(selected)
+                                            }
+                                            className="gap-1"
+                                        >
+                                            <Edit className="h-3 w-3" />
+                                            Editar
+                                        </Button>
+                                    </>
+                                ) : (
+                                    <EmptyState
+                                        icon={MapPin}
+                                        label="Nenhum endereço registado"
+                                    >
+                                        <Button
+                                            onClick={() =>
+                                                openEndereco(selected)
+                                            }
+                                            className="gap-2"
+                                        >
+                                            <Plus className="h-4 w-4" />
+                                            Adicionar
+                                        </Button>
+                                    </EmptyState>
+                                )}
+                            </TabsContent>
+
+                            {/* RECRUTAMENTO */}
+                            <TabsContent value="recrutamento" className="pt-4">
+                                {(() => {
+                                    const aprovado =
+                                        temRecrutamentoAprovado(selected);
+                                    return (
+                                        <div className="mb-4 flex items-center justify-between">
+                                            <p className="font-semibold">
+                                                Histórico de Recrutamentos
+                                            </p>
+                                            {!aprovado ? (
+                                                <Button
+                                                    size="sm"
+                                                    onClick={() =>
+                                                        openRecrutamento(
+                                                            selected,
+                                                        )
+                                                    }
+                                                    className="gap-1"
+                                                >
+                                                    <Plus className="h-3.5 w-3.5" />
+                                                    Novo
+                                                </Button>
+                                            ) : (
+                                                <Badge className="gap-1 bg-emerald-500 text-white">
+                                                    <CheckCircle className="h-3 w-3" />
+                                                    Recrutamento Aprovado
+                                                </Badge>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
+                                {selected.recrutamentos &&
+                                selected.recrutamentos.length > 0 ? (
+                                    <div className="space-y-3">
+                                        {selected.recrutamentos.map((rec) => (
+                                            <Card
+                                                key={rec.id}
+                                                className="border"
+                                            >
+                                                <CardContent className="p-4">
+                                                    <div className="flex items-start justify-between gap-2">
+                                                        <div className="space-y-1">
+                                                            <div className="flex items-center gap-2 text-sm font-medium">
+                                                                <Calendar className="h-4 w-4 text-muted-foreground" />
+                                                                {formatDate(
+                                                                    rec.data_recruta,
+                                                                )}
+                                                            </div>
+                                                            {rec.observacoes && (
+                                                                <p className="text-sm text-muted-foreground">
+                                                                    {
+                                                                        rec.observacoes
+                                                                    }
+                                                                </p>
+                                                            )}
+                                                            {rec.transferencias &&
+                                                                rec
+                                                                    .transferencias
+                                                                    .length >
+                                                                    0 && (
+                                                                    <div className="mt-2 space-y-1">
+                                                                        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                                                                            Transferências
+                                                                        </p>
+                                                                        {rec.transferencias.map(
+                                                                            (
+                                                                                t,
+                                                                            ) => (
+                                                                                <div
+                                                                                    key={
+                                                                                        t.id
+                                                                                    }
+                                                                                    className="flex items-center gap-2 rounded bg-muted/40 px-2 py-1 text-xs"
+                                                                                >
+                                                                                    <ArrowRightLeft className="h-3 w-3" />
+                                                                                    <span>
+                                                                                        {formatDate(
+                                                                                            t.data_solicitacao,
+                                                                                        )}
+                                                                                    </span>
+                                                                                    {t.municipio_destino && (
+                                                                                        <span>
+                                                                                            →{' '}
+                                                                                            {
+                                                                                                t
+                                                                                                    .municipio_destino
+                                                                                                    .nome
+                                                                                            }
+                                                                                        </span>
+                                                                                    )}
+                                                                                    {t.local_destino && (
+                                                                                        <span>
+                                                                                            {
+                                                                                                t.local_destino
+                                                                                            }
+                                                                                        </span>
+                                                                                    )}
+                                                                                    <EstadoBadge
+                                                                                        estado={
+                                                                                            t.estado
+                                                                                        }
+                                                                                    />
+                                                                                </div>
+                                                                            ),
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                        </div>
+                                                        <div className="flex flex-col items-end gap-2">
+                                                            <EstadoBadge
+                                                                estado={
+                                                                    rec.estado
+                                                                }
+                                                            />
+                                                            <Button
+                                                                size="sm"
+                                                                variant="ghost"
+                                                                className="h-7 gap-1 text-xs"
+                                                                onClick={() =>
+                                                                    openTransferencia(
+                                                                        selected,
+                                                                        rec,
+                                                                    )
+                                                                }
+                                                            >
+                                                                <ArrowRightLeft className="h-3 w-3" />
+                                                                Transferência
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                </CardContent>
+                                            </Card>
+                                        ))}
                                     </div>
                                 ) : (
-                                    <div className="flex flex-col items-center justify-center py-12 text-center">
-                                        <Users className="mb-4 h-16 w-16 text-muted-foreground" />
-                                        <p className="text-lg font-medium">
-                                            Nenhum recrutamento registado
-                                        </p>
-                                        <p className="mt-1 text-sm text-muted-foreground">
-                                            Clique no botão acima para registrar
-                                        </p>
-                                    </div>
+                                    <EmptyState
+                                        icon={Users}
+                                        label="Nenhum recrutamento registado"
+                                    />
                                 )}
                             </TabsContent>
                         </Tabs>
                     )}
-                    <Separator className="my-4" />
+
                     <DialogFooter>
-                        <Button
-                            variant="outline"
-                            onClick={() => setIsViewOpen(false)}
-                            size="lg"
-                        >
+                        <Button variant="outline" onClick={closeModal}>
                             Fechar
                         </Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
 
-            {/* ==================== MODAL DADOS BIOGRÁFICOS ==================== */}
-            <Dialog open={isBiograficoOpen} onOpenChange={setIsBiograficoOpen}>
-                <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
+            {/* ══════════════════════════════════════════ MODAL: BIOGRÁFICOS ══════════════════════════════════════════ */}
+            <Dialog
+                open={modal === 'biografico'}
+                onOpenChange={(o) => !o && closeModal()}
+            >
+                <DialogContent className="max-h-[90vh] min-w-6xl overflow-y-auto">
                     <DialogHeader>
-                        <DialogTitle className="text-xl">
-                            Dados Biográficos
-                        </DialogTitle>
+                        <DialogTitle>Dados Biográficos</DialogTitle>
                         <DialogDescription>
-                            Complete as informações biográficas do munícipe
+                            {selected?.nome_completo}
                         </DialogDescription>
                     </DialogHeader>
                     <Separator />
                     <Form {...biograficoForm}>
                         <form
                             onSubmit={biograficoForm.handleSubmit(
-                                onSubmitBiografico,
+                                onBiograficoSubmit,
                             )}
                             className="space-y-4"
                         >
-                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                                <FormField
-                                    control={biograficoForm.control}
-                                    name="nip"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>NIP</FormLabel>
-                                            <FormControl>
-                                                <Input {...field} />
-                                            </FormControl>
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={biograficoForm.control}
-                                    name="assento_numero"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>
-                                                Assento Número
-                                            </FormLabel>
-                                            <FormControl>
-                                                <Input {...field} />
-                                            </FormControl>
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={biograficoForm.control}
-                                    name="registro_civil"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>Registo Civil</FormLabel>
-                                            <FormControl>
-                                                <Input {...field} />
-                                            </FormControl>
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={biograficoForm.control}
-                                    name="registro_numero"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>Nº Registo</FormLabel>
-                                            <FormControl>
-                                                <Input {...field} />
-                                            </FormControl>
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={biograficoForm.control}
-                                    name="cedula_numero"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>Nº Cédula</FormLabel>
-                                            <FormControl>
-                                                <Input {...field} />
-                                            </FormControl>
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={biograficoForm.control}
-                                    name="numero_filhos"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>Nº Filhos</FormLabel>
-                                            <FormControl>
-                                                <Input
-                                                    type="number"
-                                                    {...field}
-                                                />
-                                            </FormControl>
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={biograficoForm.control}
-                                    name="vencimento"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>
-                                                Vencimento (Kz)
-                                            </FormLabel>
-                                            <FormControl>
-                                                <Input
-                                                    type="number"
-                                                    step="0.01"
-                                                    {...field}
-                                                />
-                                            </FormControl>
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={biograficoForm.control}
-                                    name="ramo_actividade"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>
-                                                Ramo Actividade
-                                            </FormLabel>
-                                            <FormControl>
-                                                <Input {...field} />
-                                            </FormControl>
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={biograficoForm.control}
-                                    name="ramo"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>Ramo</FormLabel>
-                                            <FormControl>
-                                                <Input {...field} />
-                                            </FormControl>
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={biograficoForm.control}
-                                    name="ano_incorporacao"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>
-                                                Ano Incorporação
-                                            </FormLabel>
-                                            <FormControl>
-                                                <Input
-                                                    type="number"
-                                                    {...field}
-                                                />
-                                            </FormControl>
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={biograficoForm.control}
-                                    name="ano_abandono"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>Ano Abandono</FormLabel>
-                                            <FormControl>
-                                                <Input
-                                                    type="number"
-                                                    {...field}
-                                                />
-                                            </FormControl>
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={biograficoForm.control}
-                                    name="ano_servico"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>
-                                                Anos de Serviço
-                                            </FormLabel>
-                                            <FormControl>
-                                                <Input
-                                                    type="number"
-                                                    {...field}
-                                                />
-                                            </FormControl>
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={biograficoForm.control}
-                                    name="modo_vida"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>Modo de Vida</FormLabel>
-                                            <FormControl>
-                                                <Input {...field} />
-                                            </FormControl>
-                                        </FormItem>
-                                    )}
-                                />
-                            </div>
+                            <FieldGrid>
+                                {[
+                                    { name: 'nip', label: 'NIP', type: 'text' },
+                                    {
+                                        name: 'assento_numero',
+                                        label: 'Assento Nº',
+                                        type: 'text',
+                                    },
+                                    {
+                                        name: 'registro_civil',
+                                        label: 'Registo Civil',
+                                        type: 'text',
+                                    },
+                                    {
+                                        name: 'registro_numero',
+                                        label: 'Nº Registo',
+                                        type: 'text',
+                                    },
+                                    {
+                                        name: 'cedula_numero',
+                                        label: 'Nº Cédula',
+                                        type: 'text',
+                                    },
+                                    {
+                                        name: 'numero_filhos',
+                                        label: 'Nº Filhos',
+                                        type: 'number',
+                                    },
+                                    {
+                                        name: 'vencimento',
+                                        label: 'Vencimento (Kz)',
+                                        type: 'number',
+                                    },
+                                    {
+                                        name: 'ramo_actividade',
+                                        label: 'Ramo Actividade',
+                                        type: 'text',
+                                    },
+                                    {
+                                        name: 'ramo',
+                                        label: 'Ramo',
+                                        type: 'text',
+                                    },
+                                    {
+                                        name: 'ano_incorporacao',
+                                        label: 'Ano Incorporação',
+                                        type: 'number',
+                                    },
+                                    {
+                                        name: 'ano_abandono',
+                                        label: 'Ano Abandono',
+                                        type: 'number',
+                                    },
+                                    {
+                                        name: 'ano_servico',
+                                        label: 'Anos de Serviço',
+                                        type: 'number',
+                                    },
+                                    {
+                                        name: 'modo_vida',
+                                        label: 'Modo de Vida',
+                                        type: 'text',
+                                    },
+                                ].map(({ name, label, type }) => (
+                                    <FormField
+                                        key={name}
+                                        control={biograficoForm.control}
+                                        name={name as any}
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel>{label}</FormLabel>
+                                                <FormControl>
+                                                    <Input
+                                                        type={type}
+                                                        {...field}
+                                                    />
+                                                </FormControl>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                ))}
+                            </FieldGrid>
                             <DialogFooter>
                                 <Button
+                                    type="button"
                                     variant="outline"
-                                    onClick={() => setIsBiograficoOpen(false)}
+                                    onClick={closeModal}
                                 >
                                     Cancelar
                                 </Button>
-                                <Button type="submit" disabled={isSubmitting}>
-                                    {isSubmitting && (
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    )}
-                                    Salvar
-                                </Button>
+                                <SubmitBtn
+                                    label="Guardar"
+                                    isSubmitting={isSubmitting}
+                                />
                             </DialogFooter>
                         </form>
                     </Form>
                 </DialogContent>
             </Dialog>
 
-            {/* ==================== MODAL DADOS COMPLEMENTARES ==================== */}
+            {/* ══════════════════════════════════════════ MODAL: COMPLEMENTARES ══════════════════════════════════════════ */}
             <Dialog
-                open={isComplementarOpen}
-                onOpenChange={setIsComplementarOpen}
+                open={modal === 'complementar'}
+                onOpenChange={(o) => !o && closeModal()}
             >
-                <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
+                <DialogContent className="max-h-[90vh] min-w-6xl overflow-y-auto">
                     <DialogHeader>
-                        <DialogTitle className="text-xl">
-                            Dados Complementares
-                        </DialogTitle>
+                        <DialogTitle>Dados Complementares</DialogTitle>
                         <DialogDescription>
-                            Complete as informações complementares do munícipe
+                            {selected?.nome_completo}
                         </DialogDescription>
                     </DialogHeader>
                     <Separator />
                     <Form {...complementarForm}>
                         <form
                             onSubmit={complementarForm.handleSubmit(
-                                onSubmitComplementar,
+                                onComplementarSubmit,
                             )}
                             className="space-y-4"
                         >
-                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                                <FormField
-                                    control={complementarForm.control}
-                                    name="caixa_postal"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>Caixa Postal</FormLabel>
-                                            <FormControl>
-                                                <Input {...field} />
-                                            </FormControl>
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={complementarForm.control}
-                                    name="nif"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>NIF</FormLabel>
-                                            <FormControl>
-                                                <Input {...field} />
-                                            </FormControl>
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={complementarForm.control}
-                                    name="encargo_familiar"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>
-                                                Encargos Familiares
-                                            </FormLabel>
-                                            <FormControl>
-                                                <Input
-                                                    type="number"
-                                                    {...field}
-                                                />
-                                            </FormControl>
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={complementarForm.control}
-                                    name="habilitacao_literaria"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>
-                                                Habilitação Literária
-                                            </FormLabel>
-                                            <FormControl>
-                                                <Input {...field} />
-                                            </FormControl>
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={complementarForm.control}
-                                    name="profissao"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>Profissão</FormLabel>
-                                            <FormControl>
-                                                <Input {...field} />
-                                            </FormControl>
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={complementarForm.control}
-                                    name="numero_irmaos"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>Nº Irmãos</FormLabel>
-                                            <FormControl>
-                                                <Input
-                                                    type="number"
-                                                    {...field}
-                                                />
-                                            </FormControl>
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={complementarForm.control}
-                                    name="entidade_emissora_bi"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>
-                                                Entidade Emissora BI
-                                            </FormLabel>
-                                            <FormControl>
-                                                <Input {...field} />
-                                            </FormControl>
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={complementarForm.control}
-                                    name="numero_carta_conducao"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>
-                                                Nº Carta Condução
-                                            </FormLabel>
-                                            <FormControl>
-                                                <Input {...field} />
-                                            </FormControl>
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={complementarForm.control}
-                                    name="data_emissao_carta"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>
-                                                Data Emissão Carta
-                                            </FormLabel>
-                                            <FormControl>
-                                                <Input type="date" {...field} />
-                                            </FormControl>
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={complementarForm.control}
-                                    name="data_validade_carta"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>
-                                                Data Validade Carta
-                                            </FormLabel>
-                                            <FormControl>
-                                                <Input type="date" {...field} />
-                                            </FormControl>
-                                        </FormItem>
-                                    )}
-                                />
-                                <FormField
-                                    control={complementarForm.control}
-                                    name="atributo"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>Atributo</FormLabel>
-                                            <FormControl>
-                                                <Input {...field} />
-                                            </FormControl>
-                                        </FormItem>
-                                    )}
-                                />
-                            </div>
+                            <FieldGrid>
+                                {[
+                                    {
+                                        name: 'caixa_postal',
+                                        label: 'Caixa Postal',
+                                        type: 'text',
+                                    },
+                                    { name: 'nif', label: 'NIF', type: 'text' },
+                                    {
+                                        name: 'encargo_familiar',
+                                        label: 'Encargos Familiares',
+                                        type: 'number',
+                                    },
+                                    {
+                                        name: 'habilitacao_literaria',
+                                        label: 'Habilitação Literária',
+                                        type: 'text',
+                                    },
+                                    {
+                                        name: 'profissao',
+                                        label: 'Profissão',
+                                        type: 'text',
+                                    },
+                                    {
+                                        name: 'numero_irmaos',
+                                        label: 'Nº Irmãos',
+                                        type: 'number',
+                                    },
+                                    {
+                                        name: 'entidade_emissora_bi',
+                                        label: 'Entidade Emissora BI',
+                                        type: 'text',
+                                    },
+                                    {
+                                        name: 'numero_carta_conducao',
+                                        label: 'Nº Carta Condução',
+                                        type: 'text',
+                                    },
+                                    {
+                                        name: 'data_emissao_carta',
+                                        label: 'Emissão Carta',
+                                        type: 'date',
+                                    },
+                                    {
+                                        name: 'data_validade_carta',
+                                        label: 'Validade Carta',
+                                        type: 'date',
+                                    },
+                                    {
+                                        name: 'atributo',
+                                        label: 'Atributo',
+                                        type: 'text',
+                                    },
+                                ].map(({ name, label, type }) => (
+                                    <FormField
+                                        key={name}
+                                        control={complementarForm.control}
+                                        name={name as any}
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel>{label}</FormLabel>
+                                                <FormControl>
+                                                    <Input
+                                                        type={type}
+                                                        {...field}
+                                                    />
+                                                </FormControl>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                ))}
+                            </FieldGrid>
                             <DialogFooter>
                                 <Button
+                                    type="button"
                                     variant="outline"
-                                    onClick={() => setIsComplementarOpen(false)}
+                                    onClick={closeModal}
                                 >
                                     Cancelar
                                 </Button>
-                                <Button type="submit" disabled={isSubmitting}>
-                                    {isSubmitting && (
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    )}
-                                    Salvar
-                                </Button>
+                                <SubmitBtn
+                                    label="Guardar"
+                                    isSubmitting={isSubmitting}
+                                />
                             </DialogFooter>
                         </form>
                     </Form>
                 </DialogContent>
             </Dialog>
 
-            {/* ==================== MODAL ENDEREÇO ==================== */}
-            <Dialog open={isEnderecoOpen} onOpenChange={setIsEnderecoOpen}>
-                <DialogContent className="max-w-2xl">
+            {/* ══════════════════════════════════════════ MODAL: ENDEREÇO ══════════════════════════════════════════ */}
+            <Dialog
+                open={modal === 'endereco'}
+                onOpenChange={(o) => !o && closeModal()}
+            >
+                <DialogContent className="max-w-xl">
                     <DialogHeader>
-                        <DialogTitle className="text-xl">
-                            Endereço do Munícipe
-                        </DialogTitle>
+                        <DialogTitle>Endereço</DialogTitle>
                         <DialogDescription>
-                            Registe o endereço completo do munícipe
+                            {selected?.nome_completo}
                         </DialogDescription>
                     </DialogHeader>
                     <Separator />
                     <Form {...enderecoForm}>
                         <form
                             onSubmit={enderecoForm.handleSubmit(
-                                onSubmitEndereco,
+                                onEnderecoSubmit,
                             )}
                             className="space-y-4"
                         >
-                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                            <div className="grid gap-4 sm:grid-cols-2">
                                 <FormField
                                     control={enderecoForm.control}
                                     name="morada"
                                     render={({ field }) => (
-                                        <FormItem>
+                                        <FormItem className="sm:col-span-2">
                                             <FormLabel>Morada</FormLabel>
                                             <FormControl>
                                                 <Input
@@ -2734,7 +2720,7 @@ export default function MunicipesIndex({
                                             <FormLabel>Comuna</FormLabel>
                                             <FormControl>
                                                 <Input
-                                                    placeholder="Ex: Benguela"
+                                                    placeholder="Ex: Benguela-Sede"
                                                     {...field}
                                                 />
                                             </FormControl>
@@ -2748,7 +2734,13 @@ export default function MunicipesIndex({
                                         <FormItem>
                                             <FormLabel>Província</FormLabel>
                                             <Select
-                                                onValueChange={field.onChange}
+                                                onValueChange={(v) => {
+                                                    field.onChange(v);
+                                                    enderecoForm.setValue(
+                                                        'id_municipio',
+                                                        undefined,
+                                                    );
+                                                }}
                                                 value={field.value?.toString()}
                                             >
                                                 <FormControl>
@@ -2770,45 +2762,84 @@ export default function MunicipesIndex({
                                         </FormItem>
                                     )}
                                 />
+                                <FormField
+                                    control={enderecoForm.control}
+                                    name="id_municipio"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>Município</FormLabel>
+                                            <Select
+                                                onValueChange={field.onChange}
+                                                value={field.value?.toString()}
+                                                disabled={
+                                                    municipiosFiltrados.length ===
+                                                    0
+                                                }
+                                            >
+                                                <FormControl>
+                                                    <SelectTrigger>
+                                                        <SelectValue
+                                                            placeholder={
+                                                                municipiosFiltrados.length ===
+                                                                0
+                                                                    ? 'Selecione província'
+                                                                    : 'Selecione'
+                                                            }
+                                                        />
+                                                    </SelectTrigger>
+                                                </FormControl>
+                                                <SelectContent>
+                                                    {municipiosFiltrados.map(
+                                                        (m) => (
+                                                            <SelectItem
+                                                                key={m.id}
+                                                                value={m.id.toString()}
+                                                            >
+                                                                {m.nome}
+                                                            </SelectItem>
+                                                        ),
+                                                    )}
+                                                </SelectContent>
+                                            </Select>
+                                        </FormItem>
+                                    )}
+                                />
                             </div>
                             <DialogFooter>
                                 <Button
+                                    type="button"
                                     variant="outline"
-                                    onClick={() => setIsEnderecoOpen(false)}
+                                    onClick={closeModal}
                                 >
                                     Cancelar
                                 </Button>
-                                <Button type="submit" disabled={isSubmitting}>
-                                    {isSubmitting && (
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    )}
-                                    Salvar Endereço
-                                </Button>
+                                <SubmitBtn
+                                    label="Guardar Endereço"
+                                    isSubmitting={isSubmitting}
+                                />
                             </DialogFooter>
                         </form>
                     </Form>
                 </DialogContent>
             </Dialog>
 
-            {/* ==================== MODAL RECRUTAMENTO ==================== */}
+            {/* ══════════════════════════════════════════ MODAL: RECRUTAMENTO ══════════════════════════════════════════ */}
             <Dialog
-                open={isRecrutamentoOpen}
-                onOpenChange={setIsRecrutamentoOpen}
+                open={modal === 'recrutamento'}
+                onOpenChange={(o) => !o && closeModal()}
             >
-                <DialogContent>
+                <DialogContent className="max-w-md">
                     <DialogHeader>
-                        <DialogTitle className="text-xl">
-                            Registar Recrutamento
-                        </DialogTitle>
+                        <DialogTitle>Registar Recrutamento</DialogTitle>
                         <DialogDescription>
-                            Para {selectedMunicipe?.nome_completo}
+                            {selected?.nome_completo}
                         </DialogDescription>
                     </DialogHeader>
                     <Separator />
                     <Form {...recrutamentoForm}>
                         <form
                             onSubmit={recrutamentoForm.handleSubmit(
-                                onSubmitRecrutamento,
+                                onRecrutamentoSubmit,
                             )}
                             className="space-y-4"
                         >
@@ -2818,11 +2849,12 @@ export default function MunicipesIndex({
                                 render={({ field }) => (
                                     <FormItem>
                                         <FormLabel>
-                                            Data do Recrutamento
+                                            Data do Recrutamento *
                                         </FormLabel>
                                         <FormControl>
                                             <Input type="date" {...field} />
                                         </FormControl>
+                                        <FormMessage />
                                     </FormItem>
                                 )}
                             />
@@ -2863,8 +2895,9 @@ export default function MunicipesIndex({
                                     <FormItem>
                                         <FormLabel>Observações</FormLabel>
                                         <FormControl>
-                                            <Input
+                                            <Textarea
                                                 placeholder="Observações adicionais..."
+                                                rows={3}
                                                 {...field}
                                             />
                                         </FormControl>
@@ -2873,22 +2906,312 @@ export default function MunicipesIndex({
                             />
                             <DialogFooter>
                                 <Button
+                                    type="button"
                                     variant="outline"
-                                    onClick={() => setIsRecrutamentoOpen(false)}
+                                    onClick={closeModal}
                                 >
                                     Cancelar
                                 </Button>
-                                <Button type="submit" disabled={isSubmitting}>
-                                    {isSubmitting && (
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    )}
-                                    Registar Recrutamento
-                                </Button>
+                                <SubmitBtn
+                                    label="Registar"
+                                    isSubmitting={isSubmitting}
+                                />
                             </DialogFooter>
                         </form>
                     </Form>
                 </DialogContent>
             </Dialog>
+
+            {/* ══════════════════════════════════════════ MODAL: TRANSFERÊNCIA ══════════════════════════════════════════ */}
+            <Dialog
+                open={modal === 'transferencia'}
+                onOpenChange={(o) => !o && closeModal()}
+            >
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <ArrowRightLeft className="h-5 w-5" />
+                            Registar Transferência
+                        </DialogTitle>
+                        <DialogDescription>
+                            Recrutamento de{' '}
+                            {formatDate(selectedRecrutamento?.data_recruta)}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <Separator />
+                    <Form {...transferenciaForm}>
+                        <form
+                            onSubmit={transferenciaForm.handleSubmit(
+                                onTransferenciaSubmit,
+                            )}
+                            className="space-y-4"
+                        >
+                            <FormField
+                                control={transferenciaForm.control}
+                                name="data_solicitacao"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>
+                                            Data da Solicitação *
+                                        </FormLabel>
+                                        <FormControl>
+                                            <Input type="date" {...field} />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                            <FormField
+                                control={transferenciaForm.control}
+                                name="id_municipio_destino"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>
+                                            Município de Destino
+                                        </FormLabel>
+                                        <Select
+                                            onValueChange={field.onChange}
+                                            value={field.value?.toString()}
+                                        >
+                                            <FormControl>
+                                                <SelectTrigger>
+                                                    <SelectValue placeholder="Selecione" />
+                                                </SelectTrigger>
+                                            </FormControl>
+                                            <SelectContent>
+                                                {municipios.map((m) => (
+                                                    <SelectItem
+                                                        key={m.id}
+                                                        value={m.id.toString()}
+                                                    >
+                                                        {m.nome}
+                                                        {m.provincia &&
+                                                            ` — ${m.provincia.nome}`}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </FormItem>
+                                )}
+                            />
+                            <FormField
+                                control={transferenciaForm.control}
+                                name="local_destino"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Local de Destino</FormLabel>
+                                        <FormControl>
+                                            <Input
+                                                placeholder="Ex: Batalhão X"
+                                                {...field}
+                                            />
+                                        </FormControl>
+                                    </FormItem>
+                                )}
+                            />
+                            <FormField
+                                control={transferenciaForm.control}
+                                name="estado"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Estado</FormLabel>
+                                        <Select
+                                            onValueChange={field.onChange}
+                                            value={field.value.toString()}
+                                        >
+                                            <FormControl>
+                                                <SelectTrigger>
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                            </FormControl>
+                                            <SelectContent>
+                                                <SelectItem value="0">
+                                                    Pendente
+                                                </SelectItem>
+                                                <SelectItem value="1">
+                                                    Aprovada
+                                                </SelectItem>
+                                                <SelectItem value="2">
+                                                    Rejeitada
+                                                </SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </FormItem>
+                                )}
+                            />
+                            <DialogFooter>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={closeModal}
+                                >
+                                    Cancelar
+                                </Button>
+                                <SubmitBtn
+                                    label="Registar Transferência"
+                                    isSubmitting={isSubmitting}
+                                />
+                            </DialogFooter>
+                        </form>
+                    </Form>
+                </DialogContent>
+            </Dialog>
+
+            {/* ══════════════════════════════════════════ MODAL: CADASTRAR PROGENITOR ══════════════════════════════════════════ */}
+            <Dialog
+                open={modal === 'progenitor'}
+                onOpenChange={(o) => !o && closeModal()}
+            >
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>
+                            Cadastrar {progenitorRole === 'pai' ? 'Pai' : 'Mãe'}
+                        </DialogTitle>
+                        <DialogDescription>
+                            O progenitor será auto-seleccionado após o cadastro.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <Separator />
+                    <Form {...progenitorForm}>
+                        <form
+                            onSubmit={progenitorForm.handleSubmit(
+                                onProgenitorSubmit,
+                            )}
+                            className="space-y-4"
+                        >
+                            <FormField
+                                control={progenitorForm.control}
+                                name="nome_completo"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Nome Completo *</FormLabel>
+                                        <FormControl>
+                                            <Input
+                                                placeholder="Nome completo"
+                                                {...field}
+                                            />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                            <div className="grid grid-cols-2 gap-4">
+                                <FormField
+                                    control={progenitorForm.control}
+                                    name="data_nascimento"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>Nascimento</FormLabel>
+                                            <FormControl>
+                                                <Input type="date" {...field} />
+                                            </FormControl>
+                                        </FormItem>
+                                    )}
+                                />
+                                <FormField
+                                    control={progenitorForm.control}
+                                    name="sexo"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>Sexo</FormLabel>
+                                            <Select
+                                                onValueChange={field.onChange}
+                                                value={field.value}
+                                            >
+                                                <FormControl>
+                                                    <SelectTrigger>
+                                                        <SelectValue />
+                                                    </SelectTrigger>
+                                                </FormControl>
+                                                <SelectContent>
+                                                    <SelectItem value="M">
+                                                        Masculino
+                                                    </SelectItem>
+                                                    <SelectItem value="F">
+                                                        Feminino
+                                                    </SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </FormItem>
+                                    )}
+                                />
+                            </div>
+                            <FormField
+                                control={progenitorForm.control}
+                                name="naturalidade"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Naturalidade</FormLabel>
+                                        <FormControl>
+                                            <Input
+                                                placeholder="Ex: Benguela"
+                                                {...field}
+                                            />
+                                        </FormControl>
+                                    </FormItem>
+                                )}
+                            />
+                            <FormField
+                                control={progenitorForm.control}
+                                name="profissao"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Profissão</FormLabel>
+                                        <FormControl>
+                                            <Input
+                                                placeholder="Ex: Agricultor"
+                                                {...field}
+                                            />
+                                        </FormControl>
+                                    </FormItem>
+                                )}
+                            />
+                            <DialogFooter>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={closeModal}
+                                >
+                                    Cancelar
+                                </Button>
+                                <SubmitBtn
+                                    label="Cadastrar"
+                                    isSubmitting={isSubmitting}
+                                />
+                            </DialogFooter>
+                        </form>
+                    </Form>
+                </DialogContent>
+            </Dialog>
+
+            {/* ══════════════════════════════════════════ CONFIRM DELETE ══════════════════════════════════════════ */}
+            <AlertDialog
+                open={!!deleteTarget}
+                onOpenChange={(o) => !o && setDeleteTarget(null)}
+            >
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Confirmar remoção</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Tem a certeza que deseja remover{' '}
+                            <span className="font-semibold">
+                                {deleteTarget?.nome_completo}
+                            </span>
+                            ? Todos os dados relacionados serão eliminados
+                            permanentemente.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={handleDelete}
+                            className="bg-destructive text-white hover:bg-destructive/90"
+                        >
+                            Remover definitivamente
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </AppLayout>
     );
 }
