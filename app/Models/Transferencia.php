@@ -38,7 +38,5 @@ class Transferencia extends Model
     public function userAprovou(): BelongsTo
     {
         return $this->belongsTo(User::class, 'id_user_aprovou');
-    }
-
-    
+    }    
 }

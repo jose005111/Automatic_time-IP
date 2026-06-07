@@ -33,20 +33,44 @@ class HandleInertiaRequests extends Middleware
      *
      * @return array<string, mixed>
      */
-    public function share(Request $request): array
-    {
-        return [
-            ...parent::share($request),
-            'name' => config('app.name'),
-            'auth' => [
-                'user' => $request->user(),
-            ],
-            'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+    // public function share(Request $request): array
+    // {
+    //     return [
+    //         ...parent::share($request),
+    //         'name' => config('app.name'),
+    //         'auth' => [
+    //             'user' => $request->user(),
+    //         ],
+    //         'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
 
-            'flash' => [
-                'success' => fn () => $request->session()->get('success'),
-                'error' => fn () => $request->session()->get('error'),
-            ],
-        ];
-    }
+    //         'flash' => [
+    //             'success' => fn () => $request->session()->get('success'),
+    //             'error' => fn () => $request->session()->get('error'),
+    //         ],
+    //     ];
+    // }
+
+    public function share(Request $request): array
+{
+    $user = $request->user();
+
+    return [
+        ...parent::share($request),
+        'name' => config('app.name'),
+        'auth' => [
+            'user' => $user ? [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                // === ADICIONA AQUI O CAMPO QUE IDENTIFICA O TIPO DE UTILIZADOR ===
+                'role'       => $user->role ?? null,           // se tens coluna "role"
+            ] : null,
+        ],
+        'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+        'flash' => [
+            'success' => fn () => $request->session()->get('success'),
+            'error'   => fn () => $request->session()->get('error'),
+        ],
+    ];
+}
 }

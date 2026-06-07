@@ -11,7 +11,6 @@ import { Button } from '@/components/ui/button';
 import {
     Dialog,
     DialogContent,
-    DialogDescription,
     DialogFooter,
     DialogHeader,
     DialogTitle,
@@ -41,15 +40,29 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Edit, Trash2, Search, X, CheckCircle } from 'lucide-react';
+import {
+    Plus,
+    Edit,
+    Trash2,
+    Search,
+    X,
+    CheckCircle,
+    Printer,
+} from 'lucide-react';
 import { type BreadcrumbItem } from '@/types';
 import MunicipeBox from '@/components/component/MunicipeBox';
+import generateCartaTransferenciaPDF from '@/lib/pdf/generateCartaTransferenciaPDF';
+
+// ─── Tipos ────────────────────────────────────────────────────────────────────
 
 interface Recrutamento {
     id: number;
     municipe: {
         id: number;
         nome_completo: string;
+        bi?: string;
+        data_nascimento?: string;
+        telefone?: string;
     };
 }
 
@@ -71,6 +84,9 @@ interface Transferencia {
         id: number;
         municipe: {
             nome_completo: string;
+            bi?: string;
+            data_nascimento?: string;
+            telefone?: string;
         };
     };
     municipioDestino?: {
@@ -79,7 +95,7 @@ interface Transferencia {
             nome: string;
         };
     };
-    userAprovou?: {
+    user_aprovou?: {
         name: string;
     };
 }
@@ -103,6 +119,8 @@ interface Props {
     filters: Filters;
 }
 
+// ─── Schema ───────────────────────────────────────────────────────────────────
+
 const formSchema = z.object({
     id_recrutamento: z.coerce.number().min(1, 'Recrutamento é obrigatório'),
     data_solicitacao: z.string().min(1, 'Data é obrigatória'),
@@ -110,6 +128,8 @@ const formSchema = z.object({
     local_destino: z.string().optional(),
     estado: z.coerce.number().min(0).max(2).optional(),
 });
+
+// ─── Componente ───────────────────────────────────────────────────────────────
 
 export default function TransferenciasIndex({
     transferencias,
@@ -119,11 +139,12 @@ export default function TransferenciasIndex({
 }: Props) {
     const { props } = usePage();
     const currentFilters = props.filters || initialFilters || {};
-
+    console.log(transferencias);
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [isEditOpen, setIsEditOpen] = useState(false);
     const [selectedTransferencia, setSelectedTransferencia] =
         useState<Transferencia | null>(null);
+    const [printingId, setPrintingId] = useState<number | null>(null);
 
     const [searchTerm, setSearchTerm] = useState(currentFilters.search || '');
     const [estadoFilter, setEstadoFilter] = useState(
@@ -145,6 +166,8 @@ export default function TransferenciasIndex({
             estado: 0,
         },
     });
+
+    // ── Filtros ──────────────────────────────────────────────────────────────
 
     const applyFilters = (newFilters: Partial<Filters>) => {
         const params: any = { ...currentFilters, ...newFilters };
@@ -177,6 +200,8 @@ export default function TransferenciasIndex({
             { preserveState: true, replace: true },
         );
     };
+
+    // ── CRUD ─────────────────────────────────────────────────────────────────
 
     const openCreate = () => {
         form.reset({
@@ -229,17 +254,24 @@ export default function TransferenciasIndex({
                 `Aprovar transferência de ${transferencia.recrutamento.municipe.nome_completo}?`,
             )
         ) {
-            router.post(
-                `/transferencias/${transferencia.id}/aprovar`,
-                {},
-                {
-                    onSuccess: () => {
-                        // Inertia will automatically refresh the page data
-                    },
-                },
-            );
+            router.post(`/transferencias/${transferencia.id}/aprovar`, {});
         }
     };
+
+    // ── PDF ───────────────────────────────────────────────────────────────────
+
+    const handleImprimirCarta = async (transferencia: Transferencia) => {
+        setPrintingId(transferencia.id);
+        await generateCartaTransferenciaPDF(transferencia, {
+            onSuccess: () => setPrintingId(null),
+            onError: () => {
+                setPrintingId(null);
+                alert('Erro ao gerar o PDF. Tente novamente.');
+            },
+        })();
+    };
+
+    // ── Badges ────────────────────────────────────────────────────────────────
 
     const getEstadoBadge = (estado: number) => {
         switch (estado) {
@@ -256,11 +288,14 @@ export default function TransferenciasIndex({
 
     const hasActiveFilters = searchTerm || estadoFilter;
 
+    // ── Render ────────────────────────────────────────────────────────────────
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Transferências - SIGID" />
 
             <div className="flex h-full flex-1 flex-col gap-4 rounded-xl p-4">
+                {/* Cabeçalho */}
                 <div className="flex items-center justify-between">
                     <div>
                         <h1 className="text-3xl font-bold tracking-tight">
@@ -381,11 +416,12 @@ export default function TransferenciasIndex({
                                         <TableCell>
                                             {getEstadoBadge(trans.estado)}
                                         </TableCell>
+
                                         <TableCell className="text-sm">
                                             {trans.estado === 1 &&
-                                            trans.userAprovou ? (
+                                            trans.user_aprovou ? (
                                                 <div>
-                                                    {trans.userAprovou.name}
+                                                    {trans.user_aprovou.name}
                                                     <div className="text-xs text-muted-foreground">
                                                         {trans.data_aprovacao &&
                                                             format(
@@ -402,6 +438,7 @@ export default function TransferenciasIndex({
                                         </TableCell>
                                         <TableCell className="text-right">
                                             <div className="flex justify-end gap-2">
+                                                {/* Aprovar — só para pendentes */}
                                                 {trans.estado === 0 && (
                                                     <Button
                                                         variant="outline"
@@ -415,6 +452,30 @@ export default function TransferenciasIndex({
                                                         Aprovar
                                                     </Button>
                                                 )}
+
+                                                {/* Imprimir carta — só para aprovados */}
+                                                {trans.estado === 1 && (
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={() =>
+                                                            handleImprimirCarta(
+                                                                trans,
+                                                            )
+                                                        }
+                                                        disabled={
+                                                            printingId ===
+                                                            trans.id
+                                                        }
+                                                        className="gap-1 border-blue-600 text-blue-600 hover:bg-blue-50 disabled:opacity-60"
+                                                    >
+                                                        <Printer className="h-4 w-4" />
+                                                        {printingId === trans.id
+                                                            ? 'A gerar…'
+                                                            : 'Carta'}
+                                                    </Button>
+                                                )}
+
                                                 <Button
                                                     variant="ghost"
                                                     size="icon"
@@ -482,7 +543,7 @@ export default function TransferenciasIndex({
                 )}
             </div>
 
-            {/* CREATE MODAL */}
+            {/* ── MODAL: Criar ── */}
             <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
                 <DialogContent>
                     <DialogHeader>
@@ -598,7 +659,7 @@ export default function TransferenciasIndex({
                 </DialogContent>
             </Dialog>
 
-            {/* EDIT MODAL */}
+            {/* ── MODAL: Editar ── */}
             <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
                 <DialogContent>
                     <DialogHeader>
@@ -617,7 +678,7 @@ export default function TransferenciasIndex({
                                         <FormLabel>Estado</FormLabel>
                                         <Select
                                             onValueChange={field.onChange}
-                                            value={field.value.toString()}
+                                            value={field.value?.toString()}
                                         >
                                             <FormControl>
                                                 <SelectTrigger>

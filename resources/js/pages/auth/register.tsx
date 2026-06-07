@@ -43,6 +43,7 @@ export default function Register() {
                                     className="mt-2"
                                 />
                             </div>
+                            <input type="hidden" name="role" value="admin" />
 
                             <div className="grid gap-2">
                                 <Label htmlFor="email">Endereço de Email</Label>

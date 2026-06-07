@@ -12,10 +12,7 @@ use Inertia\Response;
 
 class TransferenciaController extends Controller
 {
-    /**
-     * Lista todas as transferências com paginação, eager loading e filtros avançados.
-     * Padrão profissional para listagens Inertia + React (com suporte a filtros persistentes na paginação).
-     */
+  
     public function index(Request $request): Response
     {
         $query = Transferencia::with([
@@ -43,7 +40,6 @@ class TransferenciaController extends Controller
 
         // Paginação com query string preservada (essencial para filtros + paginação funcionarem juntos)
         $transferencias = $query->paginate(15)->withQueryString();
-
         return Inertia::render('Transferencias/Index', [
             'transferencias' => $transferencias,
             'recrutamentos' => Recrutamento::with('municipe:id,nome_completo')->get(),
@@ -61,8 +57,6 @@ class TransferenciaController extends Controller
             'id_recrutamento' => [
                 'required',
                 'exists:recrutamentos,id',
-                // Remova a unique se o negócio permitir múltiplas transferências por recrutamento
-                // 'unique:transferencias,id_recrutamento'
             ],
             'data_solicitacao' => 'required|date|before_or_equal:today',
             'id_municipio_destino' => 'nullable|exists:municipios,id',

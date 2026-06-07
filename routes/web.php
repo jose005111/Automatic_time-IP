@@ -137,3 +137,7 @@ Route::get('/municipes/{municipe}/pdf', [MunicipePdfController::class, 'download
 // Já está no grupo de progenitores, mas confirmar que existe:
 Route::get('/progenitores/search', [ProgenitoresController::class, 'search'])
     ->name('progenitores.search');
+
+
+    
+require __DIR__.'/settings.php';
