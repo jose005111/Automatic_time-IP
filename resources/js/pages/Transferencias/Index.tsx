@@ -138,8 +138,8 @@ export default function TransferenciasIndex({
     filters: initialFilters,
 }: Props) {
     const { props } = usePage();
+    const user = props.auth?.user;
     const currentFilters = props.filters || initialFilters || {};
-    console.log(transferencias);
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [isEditOpen, setIsEditOpen] = useState(false);
     const [selectedTransferencia, setSelectedTransferencia] =
@@ -439,19 +439,22 @@ export default function TransferenciasIndex({
                                         <TableCell className="text-right">
                                             <div className="flex justify-end gap-2">
                                                 {/* Aprovar — só para pendentes */}
-                                                {trans.estado === 0 && (
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        onClick={() =>
-                                                            handleAprovar(trans)
-                                                        }
-                                                        className="gap-1 border-green-600 text-green-600 hover:bg-green-50"
-                                                    >
-                                                        <CheckCircle className="h-4 w-4" />
-                                                        Aprovar
-                                                    </Button>
-                                                )}
+                                                {trans.estado === 0 &&
+                                                    user.role === 'admin' && (
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            onClick={() =>
+                                                                handleAprovar(
+                                                                    trans,
+                                                                )
+                                                            }
+                                                            className="gap-1 border-green-600 text-green-600 hover:bg-green-50"
+                                                        >
+                                                            <CheckCircle className="h-4 w-4" />
+                                                            Aprovar
+                                                        </Button>
+                                                    )}
 
                                                 {/* Imprimir carta — só para aprovados */}
                                                 {trans.estado === 1 && (
