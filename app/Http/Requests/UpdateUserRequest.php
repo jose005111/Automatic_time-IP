@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Rules\IdadeExatamenteDezoitoAnos;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -22,7 +23,7 @@ class UpdateUserRequest extends FormRequest
             ],
             'password' => ['nullable', 'string', 'min:8', 'confirmed'],
             'role' => ['required', Rule::in(['admin', 'custom', 'municipe'])],
-            'data_nascimento' => ['required_if:role,municipe', 'date', 'before:today'],
+            'data_nascimento' => ['required_if:role,municipe', 'date', 'before:today', new IdadeExatamenteDezoitoAnos],
             'sexo' => ['required_if:role,municipe', 'in:M,F'],
         ];
     }

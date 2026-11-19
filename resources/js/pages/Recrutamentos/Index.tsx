@@ -6,7 +6,9 @@ import * as z from 'zod';
 import { format } from 'date-fns';
 import { pt } from 'date-fns/locale';
 
+import { useAppDialog } from '@/components/app-dialog-provider';
 import AppLayout from '@/layouts/app-layout';
+import { NOME_SISTEMA } from '@/lib/sistema';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -104,6 +106,7 @@ export default function RecrutamentosIndex({
     filters: initialFilters,
     estatisticas,
 }: Props) {
+    const { confirm } = useAppDialog();
     const { props } = usePage();
     const currentFilters = props.filters || initialFilters || {};
 
@@ -217,14 +220,15 @@ export default function RecrutamentosIndex({
         });
     };
 
-    const handleDelete = (recrutamento: Recrutamento) => {
-        if (
-            confirm(
-                `Remover recrutamento de ${recrutamento.municipe.nome_completo}?`,
-            )
-        ) {
-            router.delete(`/recrutamentos/${recrutamento.id}`);
-        }
+    const handleDelete = async (recrutamento: Recrutamento) => {
+        const confirmado = await confirm({
+            title: 'Remover recrutamento',
+            description: `Remover recrutamento de ${recrutamento.municipe.nome_completo}?`,
+            confirmLabel: 'Remover',
+            destructive: true,
+        });
+        if (!confirmado) return;
+        router.delete(`/recrutamentos/${recrutamento.id}`);
     };
 
     const getEstadoBadge = (estado: number) => {
@@ -245,7 +249,7 @@ export default function RecrutamentosIndex({
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Recrutamentos - SIGID" />
+            <Head title={`Recrutamentos - ${NOME_SISTEMA}`} />
 
             <div className="flex h-full flex-1 flex-col gap-4 rounded-xl p-4">
                 {/* Header + Stats */}

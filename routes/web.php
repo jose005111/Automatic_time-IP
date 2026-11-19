@@ -17,7 +17,7 @@ use Inertia\Inertia;
 
 /*
 |--------------------------------------------------------------------------
-| Web Routes - SIGID (Sistema Informático de Gestão da Informação)
+| Web Routes - SISTEMA INFORMÁTICO DE GESTÃO DE MUNÍCIPES - DMRMAB
 | Administração Municipal de Benguela - DMRMAB
 |--------------------------------------------------------------------------
 | Hierarquia de acesso:

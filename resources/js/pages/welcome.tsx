@@ -3,6 +3,7 @@ import { Head, Link, usePage } from '@inertiajs/react';
 import { dashboard, login, register } from '@/routes';
 import type { SharedData } from '@/types';
 import { Users, FileText, Award, Search, MapPin } from 'lucide-react';
+import { NOME_SISTEMA } from '@/lib/sistema';
 
 // IMPORTAR O TEU LOGO (ajusta o caminho conforme a tua estrutura)
 import logo from '@/assets/logo.png';
@@ -31,7 +32,7 @@ export default function Welcome({
 
     return (
         <>
-            <Head title="SIGID | Sistema de Gestão de Informação - DMRMAB Benguela" />
+            <Head title={NOME_SISTEMA} />
 
             <div className="flex min-h-screen flex-col items-center bg-[#FDFDFC] p-6 text-[#1b1b18] lg:justify-center lg:p-8 dark:bg-[#0a0a0a]">
                 {/* Cabeçalho / Navegação */}
@@ -80,10 +81,10 @@ export default function Welcome({
 
                 <div className="flex w-full items-center justify-center opacity-100 transition-opacity duration-700 lg:grow starting:opacity-0">
                     <main className="lg:max-w-8xl flex w-full flex-col-reverse overflow-hidden rounded-2xl border shadow-2xl lg:flex-row dark:border-gray-800">
-                        {/* Lado Esquerdo - Informações do SIGID */}
+                        {/* Lado Esquerdo - Informações do sistema */}
                         <div className="flex flex-1 flex-col justify-center bg-white p-6 pb-12 lg:p-16 dark:bg-[#161615] dark:text-[#EDEDEC]">
                             <div className="mb-6 inline-flex w-fit items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
-                                SISTEMA INFORMÁTICO DE GESTÃO DE MUNÍCIPES
+                                {NOME_SISTEMA}
                             </div>
 
                             <h1 className="mb-4 text-3xl leading-tight font-black tracking-tight text-slate-900 uppercase sm:text-4xl dark:text-white">
@@ -203,8 +204,9 @@ export default function Welcome({
                 </div>
 
                 <div className="mt-8 text-center text-xs text-slate-500 dark:text-slate-400">
-                    &copy; {new Date().getFullYear()} SIGID — Direcção Municipal
-                    dos Registos e Modernização Administrativa de Benguela
+                    &copy; {new Date().getFullYear()} {NOME_SISTEMA} — Direcção
+                    Municipal dos Registos e Modernização Administrativa de
+                    Benguela
                     <br />
                     Desenvolvido com Laravel 12, React + TypeScript & Inertia.js
                 </div>

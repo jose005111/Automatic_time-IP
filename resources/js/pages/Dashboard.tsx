@@ -1,6 +1,7 @@
 import React from 'react';
 import { Head, Link } from '@inertiajs/react';
 import AppLayout from '@/layouts/app-layout';
+import { NOME_SISTEMA } from '@/lib/sistema';
 import { dashboard } from '@/routes';
 import type { BreadcrumbItem } from '@/types';
 import {
@@ -131,14 +132,14 @@ export default function Dashboard({
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Dashboard | SIGID - DMRMAB Benguela" />
+            <Head title={`Dashboard | ${NOME_SISTEMA}`} />
 
             <div className="flex h-full flex-1 flex-col gap-6 p-4 md:p-6">
                 {/* Header */}
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">
-                            Visão Geral - SIGID
+                            Visão Geral - {NOME_SISTEMA}
                         </h1>
                         <p className="text-muted-foreground">
                             Administração Municipal de Benguela • DMRMAB

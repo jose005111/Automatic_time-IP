@@ -1,11 +1,19 @@
 import React, { useState } from 'react';
 import { Head, useForm, router } from '@inertiajs/react';
+import { useAppDialog } from '@/components/app-dialog-provider';
 import AppLayout from '@/layouts/app-layout';
+import { NOME_SISTEMA } from '@/lib/sistema';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogFooter,
+} from '@/components/ui/dialog';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -19,18 +27,36 @@ import {
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
-    User, Shield, Calendar, ArrowRightLeft, FileDown,
-    CheckCircle, AlertCircle, Clock, MapPin, XCircle, Plus,
-    FileText, Briefcase, Printer,
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
+import {
+    User,
+    Shield,
+    Calendar,
+    ArrowRightLeft,
+    FileDown,
+    CheckCircle,
+    AlertCircle,
+    Clock,
+    MapPin,
+    XCircle,
+    Plus,
+    FileText,
+    Briefcase,
+    Printer,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { toast } from 'react-hot-toast';
 import generateFichaMunicipePDF from '../../lib/pdf/generateFichaMunicipePDF';
 import generateCartaTransferenciaPDF from '../../lib/pdf/Generatecartatransferenciapdf';
 
-const fmt = (d?: string | null) => (d ? format(new Date(d), 'dd/MM/yyyy') : '—');
+const fmt = (d?: string | null) =>
+    d ? format(new Date(d), 'dd/MM/yyyy') : '—';
 
 const EstadoBadge = ({ estado }: { estado: number }) => {
     if (estado === 1)
@@ -46,27 +72,53 @@ const EstadoBadge = ({ estado }: { estado: number }) => {
             </Badge>
         );
     return (
-        <Badge variant="secondary" className="gap-1 bg-amber-100 text-amber-700">
+        <Badge
+            variant="secondary"
+            className="gap-1 bg-amber-100 text-amber-700"
+        >
             <Clock className="h-3 w-3" /> Pendente
         </Badge>
     );
 };
 
 /* ------------------------------------------------------------------ */
-interface Municipio { id: number; nome: string; id_provincia: number; provincia?: { nome: string }; }
+interface Municipio {
+    id: number;
+    nome: string;
+    id_provincia: number;
+    provincia?: { nome: string };
+}
 interface Transferencia {
-    id: number; data_solicitacao: string; local_destino?: string;
-    estado: number; data_aprovacao?: string;
+    id: number;
+    data_solicitacao: string;
+    local_destino?: string;
+    estado: number;
+    data_aprovacao?: string;
     municipio_destino?: { id: number; nome: string };
 }
 interface Recrutamento {
-    id: number; data_recruta: string; observacoes?: string;
-    estado: number; transferencias: Transferencia[];
+    id: number;
+    data_recruta: string;
+    observacoes?: string;
+    estado: number;
+    transferencias: Transferencia[];
 }
 interface Municipe {
-    id: number; nome_completo: string; sexo: 'M' | 'F'; data_nascimento: string;
-    bi_numero?: string; telefone?: string; celular?: string; foto_url?: string;
-    dados_biograficos?: { nip?: string; ramo?: string; ramo_actividade?: string; ano_incorporacao?: number; vencimento?: number; };
+    id: number;
+    nome_completo: string;
+    sexo: 'M' | 'F';
+    data_nascimento: string;
+    bi_numero?: string;
+    telefone?: string;
+    celular?: string;
+    foto_url?: string;
+    dados_biograficos?: {
+        nip?: string;
+        ramo?: string;
+        ramo_actividade?: string;
+        ano_incorporacao?: number;
+        vencimento?: number;
+    };
     recrutamentos: Recrutamento[];
 }
 interface Props {
@@ -77,11 +129,24 @@ interface Props {
 }
 
 /* ================================================================== */
-export default function MeuRecrutamento({ municipe, municipios, temRecrutamento, recrutamentoAtivo }: Props) {
+export default function MeuRecrutamento({
+    municipe,
+    municipios,
+    temRecrutamento,
+    recrutamentoAtivo,
+}: Props) {
+    const { confirm, alert } = useAppDialog();
+
     const [modalTransferencia, setModalTransferencia] = useState(false);
-    const [recrutamentoSelecionado, setRecrutamentoSelecionado] = useState<Recrutamento | null>(null);
-    const [printingTransfId, setPrintingTransfId] = useState<number | null>(null);
-    const [confirmCarta, setConfirmCarta] = useState<{ transferencia: Transferencia; recrutamento: Recrutamento } | null>(null);
+    const [recrutamentoSelecionado, setRecrutamentoSelecionado] =
+        useState<Recrutamento | null>(null);
+    const [printingTransfId, setPrintingTransfId] = useState<number | null>(
+        null,
+    );
+    const [confirmCarta, setConfirmCarta] = useState<{
+        transferencia: Transferencia;
+        recrutamento: Recrutamento;
+    } | null>(null);
 
     const { data, setData, post, processing, errors, reset } = useForm({
         data_solicitacao: new Date().toISOString().split('T')[0],
@@ -100,20 +165,41 @@ export default function MeuRecrutamento({ municipe, municipios, temRecrutamento,
         e.preventDefault();
         if (!recrutamentoSelecionado) return;
         post(`/meu-recrutamento/${recrutamentoSelecionado.id}/transferencia`, {
-            onSuccess: () => { setModalTransferencia(false); reset(); },
+            onSuccess: () => {
+                setModalTransferencia(false);
+                reset();
+            },
         });
     };
 
-    const cancelarTransferencia = (transferenciaId: number) => {
-        if (!confirm('Tem a certeza que quer cancelar esta solicitação de transferência?')) return;
+    const cancelarTransferencia = async (transferenciaId: number) => {
+        const confirmado = await confirm({
+            title: 'Cancelar transferência',
+            description:
+                'Tem a certeza que quer cancelar esta solicitação de transferência?',
+            confirmLabel: 'Cancelar transferência',
+            destructive: true,
+        });
+        if (!confirmado) return;
         router.delete(`/meu-recrutamento/transferencia/${transferenciaId}`);
     };
 
     const downloadPdf = () => {
-        generateFichaMunicipePDF(municipe as any)();
+        generateFichaMunicipePDF(municipe as any, {
+            onError: () => {
+                void alert({
+                    title: 'Erro ao gerar PDF',
+                    description:
+                        'Ocorreu um erro ao gerar o PDF da ficha do munícipe. Tente novamente.',
+                });
+            },
+        })();
     };
 
-    const handleImprimirCarta = async (transferencia: Transferencia, recrutamento: Recrutamento) => {
+    const handleImprimirCarta = async (
+        transferencia: Transferencia,
+        recrutamento: Recrutamento,
+    ) => {
         setPrintingTransfId(transferencia.id);
         setConfirmCarta(null);
 
@@ -178,18 +264,20 @@ export default function MeuRecrutamento({ municipe, municipios, temRecrutamento,
         const hoje = new Date();
         const nasc = new Date(d);
         let idade = hoje.getFullYear() - nasc.getFullYear();
-        if (hoje.getMonth() - nasc.getMonth() < 0 ||
-            (hoje.getMonth() === nasc.getMonth() && hoje.getDate() < nasc.getDate()))
+        if (
+            hoje.getMonth() - nasc.getMonth() < 0 ||
+            (hoje.getMonth() === nasc.getMonth() &&
+                hoje.getDate() < nasc.getDate())
+        )
             idade--;
         return idade;
     };
 
     return (
         <AppLayout>
-            <Head title="Meu Recrutamento — SIGID" />
+            <Head title={`Meu Recrutamento — ${NOME_SISTEMA}`} />
 
             <div className="flex flex-col gap-6 p-6">
-
                 {/* ── CABEÇALHO ─────────────────────────────────────────── */}
                 <div className="flex flex-wrap items-start justify-between gap-4">
                     <div className="flex items-center gap-4">
@@ -200,22 +288,33 @@ export default function MeuRecrutamento({ municipe, municipios, temRecrutamento,
                                 className="h-16 w-16 rounded-full object-cover ring-2 ring-primary/20"
                             />
                         ) : (
-                            <div className={`flex h-16 w-16 items-center justify-center rounded-full text-xl font-bold text-white ${municipe.sexo === 'M' ? 'bg-blue-500' : 'bg-pink-500'}`}>
+                            <div
+                                className={`flex h-16 w-16 items-center justify-center rounded-full text-xl font-bold text-white ${municipe.sexo === 'M' ? 'bg-blue-500' : 'bg-pink-500'}`}
+                            >
                                 {municipe.nome_completo.charAt(0)}
                             </div>
                         )}
                         <div>
                             <div className="flex items-center gap-2">
                                 <Shield className="h-4 w-4 text-primary" />
-                                <span className="text-xs font-medium text-primary uppercase tracking-wide">Área de Recruta</span>
+                                <span className="text-xs font-medium tracking-wide text-primary uppercase">
+                                    Área de Recruta
+                                </span>
                             </div>
-                            <h1 className="text-2xl font-bold tracking-tight">{municipe.nome_completo}</h1>
+                            <h1 className="text-2xl font-bold tracking-tight">
+                                {municipe.nome_completo}
+                            </h1>
                             <p className="text-sm text-muted-foreground">
-                                Código #{municipe.id} · {calcIdade(municipe.data_nascimento)} anos
+                                Código #{municipe.id} ·{' '}
+                                {calcIdade(municipe.data_nascimento)} anos
                             </p>
                         </div>
                     </div>
-                    <Button onClick={downloadPdf} variant="outline" className="gap-2">
+                    <Button
+                        onClick={downloadPdf}
+                        variant="outline"
+                        className="gap-2"
+                    >
                         <FileDown className="h-4 w-4" />
                         Exportar Ficha PDF
                     </Button>
@@ -226,8 +325,14 @@ export default function MeuRecrutamento({ municipe, municipios, temRecrutamento,
                     <Card className="border-dashed">
                         <CardContent className="flex flex-col items-center justify-center gap-3 py-14 text-center text-muted-foreground">
                             <Shield className="h-12 w-12 opacity-30" />
-                            <p className="font-medium">Ainda não tem nenhum registo de recrutamento associado.</p>
-                            <p className="text-sm">Contacte o seu administrador para registar o seu recrutamento.</p>
+                            <p className="font-medium">
+                                Ainda não tem nenhum registo de recrutamento
+                                associado.
+                            </p>
+                            <p className="text-sm">
+                                Contacte o seu administrador para registar o seu
+                                recrutamento.
+                            </p>
                         </CardContent>
                     </Card>
                 )}
@@ -236,15 +341,33 @@ export default function MeuRecrutamento({ municipe, municipios, temRecrutamento,
                 {municipe.dados_biograficos && (
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                         {[
-                            { label: 'NIP', value: municipe.dados_biograficos.nip },
-                            { label: 'Ramo', value: municipe.dados_biograficos.ramo },
-                            { label: 'Ramo de Actividade', value: municipe.dados_biograficos.ramo_actividade },
-                            { label: 'Ano Incorporação', value: municipe.dados_biograficos.ano_incorporacao },
+                            {
+                                label: 'NIP',
+                                value: municipe.dados_biograficos.nip,
+                            },
+                            {
+                                label: 'Ramo',
+                                value: municipe.dados_biograficos.ramo,
+                            },
+                            {
+                                label: 'Ramo de Actividade',
+                                value: municipe.dados_biograficos
+                                    .ramo_actividade,
+                            },
+                            {
+                                label: 'Ano Incorporação',
+                                value: municipe.dados_biograficos
+                                    .ano_incorporacao,
+                            },
                         ].map(({ label, value }) => (
                             <Card key={label}>
                                 <CardContent className="pt-4 pb-4">
-                                    <p className="text-xs text-muted-foreground">{label}</p>
-                                    <p className="mt-1 font-semibold">{value ?? '—'}</p>
+                                    <p className="text-xs text-muted-foreground">
+                                        {label}
+                                    </p>
+                                    <p className="mt-1 font-semibold">
+                                        {value ?? '—'}
+                                    </p>
                                 </CardContent>
                             </Card>
                         ))}
@@ -254,7 +377,7 @@ export default function MeuRecrutamento({ municipe, municipios, temRecrutamento,
                 {/* ── LISTA DE RECRUTAMENTOS ────────────────────────────── */}
                 {temRecrutamento && (
                     <div className="space-y-4">
-                        <h2 className="text-lg font-semibold flex items-center gap-2">
+                        <h2 className="flex items-center gap-2 text-lg font-semibold">
                             <Briefcase className="h-5 w-5" />
                             Registos de Recrutamento
                         </h2>
@@ -262,10 +385,11 @@ export default function MeuRecrutamento({ municipe, municipios, temRecrutamento,
                         {municipe.recrutamentos.map((rec) => (
                             <Card key={rec.id} className="overflow-hidden">
                                 <CardHeader className="pb-3">
-                                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                                        <CardTitle className="text-base flex items-center gap-2">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <CardTitle className="flex items-center gap-2 text-base">
                                             <Calendar className="h-4 w-4 text-muted-foreground" />
-                                            Recrutamento de {fmt(rec.data_recruta)}
+                                            Recrutamento de{' '}
+                                            {fmt(rec.data_recruta)}
                                         </CardTitle>
                                         <div className="flex items-center gap-2">
                                             <EstadoBadge estado={rec.estado} />
@@ -275,7 +399,9 @@ export default function MeuRecrutamento({ municipe, municipios, temRecrutamento,
                                                     size="sm"
                                                     variant="outline"
                                                     className="gap-1 text-xs"
-                                                    onClick={() => abrirModal(rec)}
+                                                    onClick={() =>
+                                                        abrirModal(rec)
+                                                    }
                                                 >
                                                     <Plus className="h-3 w-3" />
                                                     Solicitar Transferência
@@ -284,7 +410,9 @@ export default function MeuRecrutamento({ municipe, municipios, temRecrutamento,
                                         </div>
                                     </div>
                                     {rec.observacoes && (
-                                        <p className="text-sm text-muted-foreground">{rec.observacoes}</p>
+                                        <p className="text-sm text-muted-foreground">
+                                            {rec.observacoes}
+                                        </p>
                                     )}
                                 </CardHeader>
 
@@ -292,7 +420,7 @@ export default function MeuRecrutamento({ municipe, municipios, temRecrutamento,
                                 {rec.transferencias.length > 0 && (
                                     <CardContent className="pt-0">
                                         <Separator className="mb-3" />
-                                        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+                                        <p className="mb-2 flex items-center gap-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                                             <ArrowRightLeft className="h-3 w-3" />
                                             Transferências
                                         </p>
@@ -302,40 +430,71 @@ export default function MeuRecrutamento({ municipe, municipios, temRecrutamento,
                                                     key={t.id}
                                                     className="flex items-center justify-between gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-sm"
                                                 >
-                                                    <div className="flex items-center gap-3 flex-wrap">
-                                                        <span className="text-muted-foreground text-xs">{fmt(t.data_solicitacao)}</span>
+                                                    <div className="flex flex-wrap items-center gap-3">
+                                                        <span className="text-xs text-muted-foreground">
+                                                            {fmt(
+                                                                t.data_solicitacao,
+                                                            )}
+                                                        </span>
                                                         {t.municipio_destino && (
                                                             <span className="flex items-center gap-1">
                                                                 <MapPin className="h-3 w-3 text-muted-foreground" />
-                                                                {t.municipio_destino.nome}
+                                                                {
+                                                                    t
+                                                                        .municipio_destino
+                                                                        .nome
+                                                                }
                                                             </span>
                                                         )}
-                                                        {t.local_destino && !t.municipio_destino && (
-                                                            <span className="flex items-center gap-1">
-                                                                <MapPin className="h-3 w-3 text-muted-foreground" />
-                                                                {t.local_destino}
-                                                            </span>
-                                                        )}
+                                                        {t.local_destino &&
+                                                            !t.municipio_destino && (
+                                                                <span className="flex items-center gap-1">
+                                                                    <MapPin className="h-3 w-3 text-muted-foreground" />
+                                                                    {
+                                                                        t.local_destino
+                                                                    }
+                                                                </span>
+                                                            )}
                                                         {t.data_aprovacao && (
                                                             <span className="text-xs text-muted-foreground">
-                                                                aprovado em {fmt(t.data_aprovacao)}
+                                                                aprovado em{' '}
+                                                                {fmt(
+                                                                    t.data_aprovacao,
+                                                                )}
                                                             </span>
                                                         )}
                                                     </div>
                                                     <div className="flex items-center gap-2">
-                                                        <EstadoBadge estado={t.estado} />
+                                                        <EstadoBadge
+                                                            estado={t.estado}
+                                                        />
                                                         {/* Carta — só para aprovadas */}
                                                         {t.estado === 1 && (
                                                             <Button
                                                                 size="sm"
                                                                 variant="outline"
                                                                 className="h-7 gap-1 border-blue-500 px-2 text-xs text-blue-600 hover:bg-blue-50 disabled:opacity-60"
-                                                                disabled={printingTransfId === t.id}
+                                                                disabled={
+                                                                    printingTransfId ===
+                                                                    t.id
+                                                                }
                                                                 title="Baixar carta de transferência"
-                                                                onClick={() => setConfirmCarta({ transferencia: t, recrutamento: rec })}
+                                                                onClick={() =>
+                                                                    setConfirmCarta(
+                                                                        {
+                                                                            transferencia:
+                                                                                t,
+                                                                            recrutamento:
+                                                                                rec,
+                                                                        },
+                                                                    )
+                                                                }
                                                             >
                                                                 <Printer className="h-3 w-3" />
-                                                                {printingTransfId === t.id ? 'A gerar…' : 'Carta'}
+                                                                {printingTransfId ===
+                                                                t.id
+                                                                    ? 'A gerar…'
+                                                                    : 'Carta'}
                                                             </Button>
                                                         )}
                                                         {/* Cancelar só se pendente */}
@@ -345,7 +504,11 @@ export default function MeuRecrutamento({ municipe, municipios, temRecrutamento,
                                                                 variant="ghost"
                                                                 className="h-7 w-7 p-0 text-destructive hover:text-destructive"
                                                                 title="Cancelar solicitação"
-                                                                onClick={() => cancelarTransferencia(t.id)}
+                                                                onClick={() =>
+                                                                    cancelarTransferencia(
+                                                                        t.id,
+                                                                    )
+                                                                }
                                                             >
                                                                 <XCircle className="h-4 w-4" />
                                                             </Button>
@@ -363,7 +526,10 @@ export default function MeuRecrutamento({ municipe, municipios, temRecrutamento,
             </div>
 
             {/* ── MODAL: SOLICITAR TRANSFERÊNCIA ────────────────────────── */}
-            <Dialog open={modalTransferencia} onOpenChange={setModalTransferencia}>
+            <Dialog
+                open={modalTransferencia}
+                onOpenChange={setModalTransferencia}
+            >
                 <DialogContent className="max-w-md">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
@@ -371,70 +537,110 @@ export default function MeuRecrutamento({ municipe, municipios, temRecrutamento,
                             Solicitar Transferência
                         </DialogTitle>
                     </DialogHeader>
-                    <form onSubmit={submeterTransferencia} className="space-y-4">
+                    <form
+                        onSubmit={submeterTransferencia}
+                        className="space-y-4"
+                    >
                         <div className="space-y-1">
-                            <Label htmlFor="data_solicitacao">Data de Solicitação *</Label>
+                            <Label htmlFor="data_solicitacao">
+                                Data de Solicitação *
+                            </Label>
                             <Input
                                 id="data_solicitacao"
                                 type="date"
                                 value={data.data_solicitacao}
                                 max={new Date().toISOString().split('T')[0]}
-                                onChange={e => setData('data_solicitacao', e.target.value)}
+                                onChange={(e) =>
+                                    setData('data_solicitacao', e.target.value)
+                                }
                             />
-                            {errors.data_solicitacao && <p className="text-xs text-destructive">{errors.data_solicitacao}</p>}
+                            {errors.data_solicitacao && (
+                                <p className="text-xs text-destructive">
+                                    {errors.data_solicitacao}
+                                </p>
+                            )}
                         </div>
 
                         <div className="space-y-1">
-                            <Label htmlFor="id_municipio_destino">Município de Destino</Label>
+                            <Label htmlFor="id_municipio_destino">
+                                Município de Destino
+                            </Label>
                             <Select
                                 value={data.id_municipio_destino}
-                                onValueChange={v => setData('id_municipio_destino', v)}
+                                onValueChange={(v) =>
+                                    setData('id_municipio_destino', v)
+                                }
                             >
                                 <SelectTrigger>
                                     <SelectValue placeholder="Seleccione um município..." />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {municipios.map(m => (
-                                        <SelectItem key={m.id} value={String(m.id)}>
-                                            {m.nome} {m.provincia ? `(${m.provincia.nome})` : ''}
+                                    {municipios.map((m) => (
+                                        <SelectItem
+                                            key={m.id}
+                                            value={String(m.id)}
+                                        >
+                                            {m.nome}{' '}
+                                            {m.provincia
+                                                ? `(${m.provincia.nome})`
+                                                : ''}
                                         </SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
-                            {errors.id_municipio_destino && <p className="text-xs text-destructive">{errors.id_municipio_destino}</p>}
+                            {errors.id_municipio_destino && (
+                                <p className="text-xs text-destructive">
+                                    {errors.id_municipio_destino}
+                                </p>
+                            )}
                         </div>
 
                         <div className="space-y-1">
-                            <Label htmlFor="local_destino">Local de Destino (opcional)</Label>
+                            <Label htmlFor="local_destino">
+                                Local de Destino (opcional)
+                            </Label>
                             <Input
                                 id="local_destino"
                                 placeholder="Ex: Base Militar de Luanda"
                                 value={data.local_destino}
-                                onChange={e => setData('local_destino', e.target.value)}
+                                onChange={(e) =>
+                                    setData('local_destino', e.target.value)
+                                }
                             />
                         </div>
 
                         <div className="space-y-1">
-                            <Label htmlFor="motivo">Motivo / Justificação</Label>
+                            <Label htmlFor="motivo">
+                                Motivo / Justificação
+                            </Label>
                             <Textarea
                                 id="motivo"
                                 rows={3}
                                 placeholder="Descreva o motivo da transferência..."
                                 value={data.motivo}
-                                onChange={e => setData('motivo', e.target.value)}
+                                onChange={(e) =>
+                                    setData('motivo', e.target.value)
+                                }
                             />
                         </div>
 
-                        <p className="text-xs text-muted-foreground rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
-                            A solicitação ficará pendente até ser aprovada por um administrador.
+                        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-muted-foreground">
+                            A solicitação ficará pendente até ser aprovada por
+                            um administrador.
                         </p>
 
                         <DialogFooter>
-                            <Button type="button" variant="outline" onClick={() => setModalTransferencia(false)}>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => setModalTransferencia(false)}
+                            >
                                 Cancelar
                             </Button>
                             <Button type="submit" disabled={processing}>
-                                {processing ? 'A enviar...' : 'Submeter Solicitação'}
+                                {processing
+                                    ? 'A enviar...'
+                                    : 'Submeter Solicitação'}
                             </Button>
                         </DialogFooter>
                     </form>
@@ -444,7 +650,9 @@ export default function MeuRecrutamento({ municipe, municipios, temRecrutamento,
             {/* ── CONFIRM: Baixar Carta de Transferência ─────────────────── */}
             <AlertDialog
                 open={!!confirmCarta}
-                onOpenChange={(o) => { if (!o) setConfirmCarta(null); }}
+                onOpenChange={(o) => {
+                    if (!o) setConfirmCarta(null);
+                }}
             >
                 <AlertDialogContent>
                     <AlertDialogHeader>
@@ -454,17 +662,32 @@ export default function MeuRecrutamento({ municipe, municipios, temRecrutamento,
                         </AlertDialogTitle>
                         <AlertDialogDescription className="space-y-1">
                             <p>
-                                Vai ser gerado o comprovativo oficial de transferência aprovada para{' '}
+                                Vai ser gerado o comprovativo oficial de
+                                transferência aprovada para{' '}
                                 <strong>
-                                    {confirmCarta?.transferencia.municipio_destino?.nome
-                                        ?? confirmCarta?.transferencia.local_destino
-                                        ?? 'destino indicado'}
-                                </strong>.
+                                    {confirmCarta?.transferencia
+                                        .municipio_destino?.nome ??
+                                        confirmCarta?.transferencia
+                                            .local_destino ??
+                                        'destino indicado'}
+                                </strong>
+                                .
                             </p>
                             <p className="text-xs text-muted-foreground">
-                                Solicitada em {fmt(confirmCarta?.transferencia.data_solicitacao)}
+                                Solicitada em{' '}
+                                {fmt(
+                                    confirmCarta?.transferencia
+                                        .data_solicitacao,
+                                )}
                                 {confirmCarta?.transferencia.data_aprovacao && (
-                                    <> · Aprovada em {fmt(confirmCarta.transferencia.data_aprovacao)}</>
+                                    <>
+                                        {' '}
+                                        · Aprovada em{' '}
+                                        {fmt(
+                                            confirmCarta.transferencia
+                                                .data_aprovacao,
+                                        )}
+                                    </>
                                 )}
                             </p>
                         </AlertDialogDescription>
@@ -475,7 +698,10 @@ export default function MeuRecrutamento({ municipe, municipios, temRecrutamento,
                             className="gap-2 bg-blue-600 text-white hover:bg-blue-700"
                             onClick={() => {
                                 if (confirmCarta) {
-                                    handleImprimirCarta(confirmCarta.transferencia, confirmCarta.recrutamento);
+                                    handleImprimirCarta(
+                                        confirmCarta.transferencia,
+                                        confirmCarta.recrutamento,
+                                    );
                                 }
                             }}
                         >

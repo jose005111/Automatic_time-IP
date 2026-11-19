@@ -6,6 +6,7 @@ import * as z from 'zod';
 import { format } from 'date-fns';
 import { toast } from 'react-hot-toast';
 
+import { useAppDialog } from '@/components/app-dialog-provider';
 import AppLayout from '@/layouts/app-layout';
 import { Button } from '@/components/ui/button';
 import {
@@ -93,6 +94,12 @@ import {
     Mail,
 } from 'lucide-react';
 import { type BreadcrumbItem } from '@/types';
+import {
+    limitesDataNascimentoMunicipe,
+    MENSAGEM_IDADE_INVALIDA,
+    temIdadeMunicipeValida,
+} from '@/lib/idade';
+import { NOME_SISTEMA } from '@/lib/sistema';
 import generateFichaMunicipePDF from './../../lib/pdf/generateFichaMunicipePDF';
 // ...
 // ─── TIPOS ────────────────────────────────────────────────────────────────────
@@ -230,7 +237,10 @@ const municipeSchema = z.object({
     nome_completo: z
         .string()
         .min(3, 'Informe o nome completo (mínimo 3 caracteres).'),
-    data_nascimento: z.string().min(1, 'Informe a data de nascimento.'),
+    data_nascimento: z
+        .string()
+        .min(1, 'Informe a data de nascimento.')
+        .refine(temIdadeMunicipeValida, MENSAGEM_IDADE_INVALIDA),
     sexo: z.enum(['M', 'F'], { error: 'Selecione o sexo.' }),
     estado_civil: z.string().optional(),
     naturalidade: z.string().optional(),
@@ -714,6 +724,8 @@ export default function MunicipesIndex({
     filters: initialFilters,
     stats,
 }: Props) {
+    const { alert } = useAppDialog();
+
     const breadcrumbs: BreadcrumbItem[] = [
         { title: 'Dashboard', href: '/dashboard' },
         { title: 'Munícipes', href: '/municipes' },
@@ -861,7 +873,9 @@ export default function MunicipesIndex({
 
         setServerErrors(mensagens);
         if (mensagens.length > 0) {
-            toast.error('Não foi possível guardar. Corrija os erros indicados.');
+            toast.error(
+                'Não foi possível guardar. Corrija os erros indicados.',
+            );
         }
     };
 
@@ -900,7 +914,9 @@ export default function MunicipesIndex({
         routeFn();
     };
 
-    const normalizarDatasMunicipe = (v: MunicipeFormType): MunicipeFormType => ({
+    const normalizarDatasMunicipe = (
+        v: MunicipeFormType,
+    ): MunicipeFormType => ({
         ...v,
         data_nascimento: toDateInputValue(v.data_nascimento),
         bi_data_emissao: toDateInputValue(v.bi_data_emissao),
@@ -1104,8 +1120,7 @@ export default function MunicipesIndex({
         submit(() =>
             router.post(`/municipes/${selected.id}/endereco`, v, {
                 onSuccess: closeModal,
-                onError: (errors) =>
-                    aplicarErrosServidor(errors, enderecoForm),
+                onError: (errors) => aplicarErrosServidor(errors, enderecoForm),
             }),
         );
     };
@@ -1235,7 +1250,15 @@ export default function MunicipesIndex({
         });
     };
     const downloadPdf = (m: Municipe) => {
-        generateFichaMunicipePDF(m)(); // chama imediatamente o handler retornado
+        generateFichaMunicipePDF(m, {
+            onError: () => {
+                void alert({
+                    title: 'Erro ao gerar PDF',
+                    description:
+                        'Ocorreu um erro ao gerar o PDF da ficha do munícipe. Tente novamente.',
+                });
+            },
+        })();
     };
     // ─── Formulário munícipe com combobox de progenitores ─────────────────────
     const MunicipeFormFields = ({ f }: { f: typeof form }) => (
@@ -1264,7 +1287,11 @@ export default function MunicipesIndex({
                         <FormItem>
                             <FormLabel>Data de Nascimento *</FormLabel>
                             <FormControl>
-                                <Input type="date" {...field} />
+                                <Input
+                                    type="date"
+                                    {...field}
+                                    {...limitesDataNascimentoMunicipe()}
+                                />
                             </FormControl>
                             <FormMessage />
                         </FormItem>
@@ -1667,7 +1694,7 @@ export default function MunicipesIndex({
     // ─── RENDER ───────────────────────────────────────────────────────────────
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Munícipes — SIGID" />
+            <Head title={`Munícipes — ${NOME_SISTEMA}`} />
 
             <div className="flex flex-col gap-6 p-6">
                 {/* HEADER */}

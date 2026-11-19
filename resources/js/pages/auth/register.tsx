@@ -1,5 +1,6 @@
 import { Form, Head } from '@inertiajs/react';
 import InputError from '@/components/input-error';
+import PasswordInput from '@/components/password-input';
 import TextLink from '@/components/text-link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -60,12 +61,12 @@ export default function Register() {
                             </div>
 
                             <div className="grid gap-2">
-                                <Label htmlFor="password">Senha</Label>
-                                <Input
+                                <Label htmlFor="password">Palavra-passe</Label>
+                                <PasswordInput
                                     id="password"
-                                    type="password"
                                     required
                                     tabIndex={3}
+                                    toggleTabIndex={4}
                                     autoComplete="new-password"
                                     name="password"
                                     placeholder="••••••••"
@@ -75,13 +76,13 @@ export default function Register() {
 
                             <div className="grid gap-2">
                                 <Label htmlFor="password_confirmation">
-                                    Confirmar Senha
+                                    Confirmar palavra-passe
                                 </Label>
-                                <Input
+                                <PasswordInput
                                     id="password_confirmation"
-                                    type="password"
                                     required
-                                    tabIndex={4}
+                                    tabIndex={5}
+                                    toggleTabIndex={6}
                                     autoComplete="new-password"
                                     name="password_confirmation"
                                     placeholder="••••••••"
@@ -94,7 +95,7 @@ export default function Register() {
                             <Button
                                 type="submit"
                                 className="mt-2 w-full bg-blue-600 text-white hover:bg-blue-700"
-                                tabIndex={5}
+                                tabIndex={7}
                                 data-test="register-user-button"
                                 disabled={processing}
                             >
@@ -107,7 +108,7 @@ export default function Register() {
                             Já tem uma conta no sistema?{' '}
                             <TextLink
                                 href={login()}
-                                tabIndex={6}
+                                tabIndex={8}
                                 className="font-medium text-blue-600 hover:text-blue-700"
                             >
                                 Entrar

@@ -7,6 +7,7 @@ use App\Models\Municipio;
 use App\Models\Progenitor;
 use App\Models\Provincia;
 use App\Models\User;
+use App\Rules\IdadeExatamenteDezoitoAnos;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -119,7 +120,7 @@ class MunicipeController extends Controller
     {
         $validated = $request->validate([
             'nome_completo' => 'required|string|max:255',
-            'data_nascimento' => 'required|date|before:today',
+            'data_nascimento' => ['required', 'date', 'before:today', new IdadeExatamenteDezoitoAnos],
             'sexo' => 'required|in:M,F',
             'estado_civil' => 'nullable|string|max:50',
             'naturalidade' => 'nullable|string|max:150',
@@ -171,7 +172,7 @@ class MunicipeController extends Controller
     {
         $validated = $request->validate([
             'nome_completo' => 'required|string|max:255',
-            'data_nascimento' => 'required|date|before:today',
+            'data_nascimento' => ['required', 'date', 'before:today', new IdadeExatamenteDezoitoAnos],
             'sexo' => 'required|in:M,F',
             'estado_civil' => 'nullable|string|max:50',
             'naturalidade' => 'nullable|string|max:150',

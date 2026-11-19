@@ -2,21 +2,30 @@
 
 namespace Database\Seeders;
 
-use App\Models\Municipe;
-use App\Models\Provincia;
-use App\Models\Municipio;
-use App\Models\Progenitor;
 use App\Models\DadosBiografico;
 use App\Models\DadosComplementar;
 use App\Models\Endereco;
+use App\Models\Municipe;
+use App\Models\Municipio;
+use App\Models\Progenitor;
+use App\Models\Provincia;
 use App\Models\Recrutamento;
+use Carbon\Carbon;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\Hash;
 
 class MunicipeSeeder extends Seeder
 {
     public function run(): void
     {
+        $dataNascimento1 = Carbon::today()->subYears(18)->subMonths(7)->format('Y-m-d');
+        $dataNascimento2 = Carbon::today()->subYears(18)->subMonths(3)->format('Y-m-d');
+        $dataNascimento3 = Carbon::today()->subYears(18)->subDays(10)->format('Y-m-d');
+
+        $biEmissao1 = Carbon::parse($dataNascimento1)->addYears(18)->format('Y-m-d');
+        $biValidade1 = Carbon::parse($dataNascimento1)->addYears(28)->format('Y-m-d');
+        $biEmissao2 = Carbon::parse($dataNascimento2)->addYears(18)->format('Y-m-d');
+        $biValidade2 = Carbon::parse($dataNascimento2)->addYears(28)->format('Y-m-d');
+
         $benguelaProv = Provincia::where('nome', 'Benguela')->first();
         $benguelaMun = Municipio::where('nome', 'Benguela')->where('id_provincia', $benguelaProv->id)->first();
         $lobitoMun = Municipio::where('nome', 'Lobito')->first();
@@ -32,14 +41,14 @@ class MunicipeSeeder extends Seeder
             ['bi_numero' => '123456789LA042'],
             [
                 'nome_completo' => 'Carlos Eduardo Silva Costa',
-                'data_nascimento' => '2005-04-12',
+                'data_nascimento' => $dataNascimento1,
                 'sexo' => 'M',
                 'estado_civil' => 'Solteiro',
                 'naturalidade' => 'Benguela',
                 'id_municipio_naturalidade' => $benguelaMun->id,
                 'bi_numero' => '123456789LA042',
-                'bi_data_emissao' => '2022-06-15',
-                'bi_data_validade' => '2032-06-15',
+                'bi_data_emissao' => $biEmissao1,
+                'bi_data_validade' => $biValidade1,
                 'telefone' => '222-456-789',
                 'celular' => '923-456-789',
                 'id_pai' => $pai1->id,
@@ -100,14 +109,14 @@ class MunicipeSeeder extends Seeder
             ['bi_numero' => '987654321LA056'],
             [
                 'nome_completo' => 'Ana Beatriz Mendes Lopes',
-                'data_nascimento' => '2006-11-03',
+                'data_nascimento' => $dataNascimento2,
                 'sexo' => 'F',
                 'estado_civil' => 'Solteira',
                 'naturalidade' => 'Lobito',
                 'id_municipio_naturalidade' => $lobitoMun->id,
                 'bi_numero' => '987654321LA056',
-                'bi_data_emissao' => '2023-02-10',
-                'bi_data_validade' => '2033-02-10',
+                'bi_data_emissao' => $biEmissao2,
+                'bi_data_validade' => $biValidade2,
                 'celular' => '924-567-890',
                 'id_pai' => $pai2->id,
                 'id_mae' => $mae2->id,
@@ -140,7 +149,7 @@ class MunicipeSeeder extends Seeder
             ['bi_numero' => '456789123LA078'],
             [
                 'nome_completo' => 'Pedro António Neto',
-                'data_nascimento' => '2004-05-28',
+                'data_nascimento' => $dataNascimento3,
                 'sexo' => 'M',
                 'estado_civil' => 'Solteiro',
                 'naturalidade' => 'Catumbela',

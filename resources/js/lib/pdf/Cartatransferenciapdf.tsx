@@ -8,6 +8,7 @@ import {
     Line,
     Svg,
 } from '@react-pdf/renderer';
+import { NOME_SISTEMA } from '@/lib/sistema';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -61,10 +62,10 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     orgName: {
-        fontSize: 13,
+        fontSize: 9,
         fontFamily: 'Helvetica-Bold',
         color: '#1a1a2e',
-        letterSpacing: 0.5,
+        letterSpacing: 0.3,
         textTransform: 'uppercase',
     },
     orgSub: {
@@ -347,14 +348,14 @@ interface Props {
     transferencia: CartaTransferenciaData;
     /** Nome da organização emissora */
     organizacao?: string;
-    /** Sigla/abreviação da organização */
-    sigla?: string;
+    /** Nome do sistema emissor */
+    nomeSistema?: string;
 }
 
 export default function CartaTransferenciaPdf({
     transferencia,
-    organizacao = 'Sistema Integrado de Gestão de Identificação e Documentação',
-    sigla = 'SIGID',
+    organizacao = 'Administração Municipal de Benguela — DMRMAB',
+    nomeSistema = NOME_SISTEMA,
 }: Props) {
     const municipe = transferencia.recrutamento.municipe;
     const destino = transferencia.municipioDestino;
@@ -366,7 +367,7 @@ export default function CartaTransferenciaPdf({
     return (
         <Document
             title={`Carta de Transferência — ${municipe.nome_completo}`}
-            author={sigla}
+            author={nomeSistema}
             subject="Transferência Aprovada"
         >
             <Page size="A4" style={styles.page}>
@@ -378,7 +379,7 @@ export default function CartaTransferenciaPdf({
                 {/* ── Cabeçalho ── */}
                 <View style={styles.header}>
                     <View style={styles.headerLeft}>
-                        <Text style={styles.orgName}>{sigla}</Text>
+                        <Text style={styles.orgName}>{nomeSistema}</Text>
                         <Text style={styles.orgSub}>{organizacao}</Text>
                     </View>
                     <View style={styles.headerRight}>
@@ -545,9 +546,7 @@ export default function CartaTransferenciaPdf({
                         <Text style={styles.despachoHighlight}>
                             {formatDate(transferencia.data_aprovacao)}
                         </Text>
-                        {
-                            '. O presente documento é válido como comprovativo oficial de transferência no âmbito do Sistema Integrado de Gestão de Identificação e Documentação (SIGID).'
-                        }
+                        {`. O presente documento é válido como comprovativo oficial de transferência no âmbito do ${nomeSistema}.`}
                     </Text>
                 </View>
 
@@ -574,7 +573,7 @@ export default function CartaTransferenciaPdf({
                 {/* ── Rodapé ── */}
                 <View style={styles.footer} fixed>
                     <Text style={styles.footerText}>
-                        <Text style={styles.footerBold}>{sigla}</Text>
+                        <Text style={styles.footerBold}>{nomeSistema}</Text>
                         {' · Documento gerado electronicamente'}
                     </Text>
                     <Text style={styles.footerText}>{refDoc}</Text>

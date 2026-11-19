@@ -41,7 +41,7 @@ class PasswordController extends Controller
                 : route('dashboard');
 
             return redirect($destination)
-                ->with('success', 'Senha alterada com sucesso! Bem-vindo ao SIGID.');
+                ->with('success', 'Senha alterada com sucesso! Bem-vindo ao SISTEMA INFORMÁTICO DE GESTÃO DE MUNÍCIPES - DMRMAB.');
         }
 
         return back()->with('success', 'Senha actualizada com sucesso!');

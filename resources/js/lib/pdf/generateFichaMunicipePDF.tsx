@@ -40,12 +40,6 @@ export default function generateFichaMunicipePDF(
         } catch (error) {
             console.error('Erro ao gerar PDF da ficha do munícipe:', error);
 
-            // TODO: Substitui pelo teu sistema de toasts (Sonner ou react-toastify)
-            // toast.error('Erro ao gerar o PDF. Tente novamente.');
-            alert(
-                'Ocorreu um erro ao gerar o PDF da ficha do munícipe. Tente novamente.',
-            );
-
             options.onError?.(error as Error);
         }
     };

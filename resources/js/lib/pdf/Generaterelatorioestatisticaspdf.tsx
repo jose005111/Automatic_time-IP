@@ -11,7 +11,7 @@ interface GenerateOptions {
 
 /**
  * Gera e faz download do Relatório de Estatísticas em PDF,
- * respeitando os filtros activos (período e província).
+ * respeitando todos os filtros activos.
  *
  * Uso directo (sem retorno de handler):
  *   await generateRelatorioEstatisticasPDF(data);
@@ -40,7 +40,10 @@ export default async function generateRelatorioEstatisticasPDF(
         const provincia = data.filters.provincia_nome
             ? `_${slugify(data.filters.provincia_nome)}`
             : '';
-        link.download = `relatorio_sigid${provincia}${periodo}_${todaySlug()}.pdf`;
+        const municipio = data.filters.municipio_nome
+            ? `_${slugify(data.filters.municipio_nome)}`
+            : '';
+        link.download = `relatorio_municipes${provincia}${municipio}${periodo}_${todaySlug()}.pdf`;
 
         document.body.appendChild(link);
         link.click();
@@ -51,7 +54,6 @@ export default async function generateRelatorioEstatisticasPDF(
     } catch (error) {
         console.error('Erro ao gerar PDF do relatório:', error);
         options.onError?.(error as Error);
-        throw error;
     }
 }
 

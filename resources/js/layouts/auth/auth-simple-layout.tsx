@@ -4,6 +4,7 @@ import type { AuthLayoutProps } from '@/types';
 import { useState, useEffect } from 'react';
 
 // 1. IMPORTAR O LOGO INSTITUCIONAL
+import { NOME_SISTEMA } from '@/lib/sistema';
 import logo from '@/assets/logo.png';
 
 
@@ -27,7 +28,7 @@ export default function AuthSimpleLayout({
                             {/* 6. LOGO INSTITUCIONAL EM VEZ DO ÍCONE */}
                             <img
                                 src={logo}
-                                alt="SIGID"
+                                alt={NOME_SISTEMA}
                                 className="mb-4 h-16 w-auto object-contain"
                             />
                             <span className="sr-only">{title}</span>

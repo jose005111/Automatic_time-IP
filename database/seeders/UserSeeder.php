@@ -9,15 +9,14 @@ class UserSeeder extends Seeder
 {
     public function run(): void
     {
-        $user = 
+        User::firstOrCreate(
+            ['email' => 'admin@gmail.com'],
             [
                 'name' => 'Administrador',
-                'email' => 'admin@gmail.com',
                 'password' => bcrypt('12345678'),
                 'role' => 'admin',
-            ];
-
-            User::firstOrCreate($user);
+            ]
+        );
 
         $this->command->info('Usuário criado com sucesso!');
     }

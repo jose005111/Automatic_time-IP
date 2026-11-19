@@ -8,6 +8,7 @@ import {
     Svg,
     Line,
 } from '@react-pdf/renderer';
+import { NOME_SISTEMA } from '@/lib/sistema';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -36,10 +37,15 @@ export interface RelatorioEstatisticasData {
     topMunicipios: ChartData[];
     cadastrosPorMes: ChartData[];
     filters: {
-        start_date?: string;
-        end_date?: string;
-        provincia_id?: string;
-        provincia_nome?: string;
+        start_date?: string | null;
+        end_date?: string | null;
+        municipio_id?: string | number | null;
+        municipio_nome?: string | null;
+        provincia_id?: string | number | null;
+        provincia_nome?: string | null;
+        estado?: string | null;
+        sexo?: string | null;
+        periodo?: string | null;
     };
     geradoEm?: string;
 }
@@ -132,7 +138,9 @@ const s = StyleSheet.create({
         borderColor: C.border,
         padding: 12,
         flexDirection: 'row',
-        gap: 24,
+        flexWrap: 'wrap',
+        gap: 12,
+        rowGap: 8,
     },
     filterItem: {
         flexDirection: 'column',
@@ -224,12 +232,16 @@ const s = StyleSheet.create({
         fontSize: 7,
         color: C.slate,
         textAlign: 'right',
+        maxLines: 1,
+        textOverflow: 'ellipsis',
     },
     barLabelWide: {
         width: 100,
         fontSize: 7,
         color: C.slate,
         textAlign: 'right',
+        maxLines: 1,
+        textOverflow: 'ellipsis',
     },
     barTrack: {
         flex: 1,
@@ -329,7 +341,7 @@ function sumValues(data: ChartData[], key: 'value'): number {
     return data.reduce((acc, d) => acc + ((d[key] as number) ?? 0), 0);
 }
 
-function formatDate(iso?: string): string {
+function formatDate(iso?: string | null): string {
     if (!iso) return '—';
     const [y, m, d] = iso.split('-');
     return `${d}/${m}/${y}`;
@@ -389,7 +401,6 @@ function HorizontalBarChart({
                                     ? s.barLabelWide
                                     : s.barLabel
                             }
-                            numberOfLines={1}
                         >
                             {d[labelKey] ?? ''}
                         </Text>
@@ -489,6 +500,21 @@ export default function RelatorioEstatisticasPDF({
             : 'Todo o período';
 
     const provinciaLabel = filters.provincia_nome ?? 'Todas as Províncias';
+    const municipioLabel = filters.municipio_nome ?? 'Todos os Municípios';
+    const estadoLabel =
+        filters.estado === '0'
+            ? 'Pendente'
+            : filters.estado === '1'
+              ? 'Aprovado'
+              : filters.estado === '2'
+                ? 'Rejeitado'
+                : 'Todos os Estados';
+    const sexoLabel =
+        filters.sexo === 'M'
+            ? 'Masculino'
+            : filters.sexo === 'F'
+              ? 'Feminino'
+              : 'Ambos';
 
     const now = geradoEm
         ? geradoEm
@@ -502,9 +528,9 @@ export default function RelatorioEstatisticasPDF({
 
     return (
         <Document
-            title="Relatório de Estatísticas — SIGID"
-            author="DMRMAB Benguela"
-            subject="Análise avançada de dados do SIGID"
+            title={`Relatório de Estatísticas — ${NOME_SISTEMA}`}
+            author={NOME_SISTEMA}
+            subject={`Análise avançada de dados do ${NOME_SISTEMA}`}
         >
             <Page size="A4" style={s.page}>
                 {/* ── Header ── */}
@@ -515,12 +541,11 @@ export default function RelatorioEstatisticasPDF({
                                 Relatório de Estatísticas
                             </Text>
                             <Text style={s.headerSubtitle}>
-                                SIGID — DMRMAB Benguela · Análise avançada de
-                                dados
+                                {NOME_SISTEMA} · Análise avançada de dados
                             </Text>
                         </View>
                         <View style={s.headerBadge}>
-                            <Text style={s.headerBadgeText}>SIGID</Text>
+                            <Text style={s.headerBadgeText}>DMRMAB</Text>
                         </View>
                     </View>
                 </View>
@@ -535,7 +560,19 @@ export default function RelatorioEstatisticasPDF({
                         <Text style={s.filterLabel}>Província</Text>
                         <Text style={s.filterValue}>{provinciaLabel}</Text>
                     </View>
-                    <View style={[s.filterItem, { marginLeft: 'auto' }]}>
+                    <View style={s.filterItem}>
+                        <Text style={s.filterLabel}>Município</Text>
+                        <Text style={s.filterValue}>{municipioLabel}</Text>
+                    </View>
+                    <View style={s.filterItem}>
+                        <Text style={s.filterLabel}>Estado</Text>
+                        <Text style={s.filterValue}>{estadoLabel}</Text>
+                    </View>
+                    <View style={s.filterItem}>
+                        <Text style={s.filterLabel}>Sexo</Text>
+                        <Text style={s.filterValue}>{sexoLabel}</Text>
+                    </View>
+                    <View style={s.filterItem}>
                         <Text style={s.filterLabel}>Gerado em</Text>
                         <Text style={s.filterValue}>{now}</Text>
                     </View>
@@ -637,7 +674,7 @@ export default function RelatorioEstatisticasPDF({
                 {/* ── Footer ── */}
                 <View style={s.footer} fixed>
                     <Text style={s.footerText}>
-                        Documento gerado automaticamente pelo sistema SIGID
+                        Documento gerado automaticamente pelo {NOME_SISTEMA}
                     </Text>
                     <Text style={s.footerBrand}>DMRMAB · Benguela</Text>
                 </View>

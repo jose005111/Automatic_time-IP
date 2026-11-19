@@ -13,6 +13,7 @@ class DatabaseSeeder extends Seeder
             MunicipioSeeder::class,
             ProgenitorSeeder::class,
             MunicipeSeeder::class,
+            TransferenciaSeeder::class,
             UserSeeder::class,
         ]);
 

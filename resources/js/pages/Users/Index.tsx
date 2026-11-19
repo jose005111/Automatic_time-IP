@@ -34,6 +34,12 @@ import {
 import { Badge } from '@/components/ui/badge';
 import AppLayout from '@/layouts/app-layout';
 import { BreadcrumbItem } from '@/types';
+import {
+    limitesDataNascimentoMunicipe,
+    MENSAGEM_IDADE_INVALIDA,
+    temIdadeMunicipeValida,
+} from '@/lib/idade';
+import { NOME_SISTEMA } from '@/lib/sistema';
 
 // ==================== SCHEMA ZOD ====================
 const userSchema = z
@@ -66,6 +72,16 @@ const userSchema = z
         message: 'A data de nascimento é obrigatória para munícipes',
         path: ['data_nascimento'],
     })
+    .refine(
+        (data) =>
+            data.role !== 'municipe' ||
+            !data.data_nascimento ||
+            temIdadeMunicipeValida(data.data_nascimento),
+        {
+            message: MENSAGEM_IDADE_INVALIDA,
+            path: ['data_nascimento'],
+        },
+    )
     .refine((data) => data.role !== 'municipe' || ['M', 'F'].includes(data.sexo ?? ''), {
         message: 'O sexo é obrigatório para munícipes',
         path: ['sexo'],
@@ -164,7 +180,11 @@ export default function UsersIndex({ users, roleOptions }: Props) {
             <>
                 <div className="grid gap-2">
                     <Label>Data de Nascimento</Label>
-                    <Input type="date" {...form.register('data_nascimento')} />
+                    <Input
+                        type="date"
+                        {...form.register('data_nascimento')}
+                        {...limitesDataNascimentoMunicipe()}
+                    />
                     {form.formState.errors.data_nascimento && (
                         <p className="text-sm text-red-500">
                             {form.formState.errors.data_nascimento.message}
@@ -237,7 +257,7 @@ export default function UsersIndex({ users, roleOptions }: Props) {
     ];
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Gestão de Utilizadores | SIGID" />
+            <Head title={`Gestão de Utilizadores | ${NOME_SISTEMA}`} />
 
             <div className="flex h-full flex-1 flex-col gap-4 rounded-xl p-4">
                 <div className="flex items-center justify-between">
@@ -246,7 +266,7 @@ export default function UsersIndex({ users, roleOptions }: Props) {
                             Gestão de Utilizadores
                         </h1>
                         <p className="text-muted-foreground">
-                            Controlo de acessos ao sistema SIGID
+                            Controlo de acessos ao {NOME_SISTEMA}
                         </p>
                     </div>
                     <Button onClick={openCreate} className="gap-2">

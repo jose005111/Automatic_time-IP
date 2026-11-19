@@ -8,6 +8,7 @@ import {
     Line,
     Svg,
 } from '@react-pdf/renderer';
+import { NOME_SISTEMA } from '@/lib/sistema';
 import type { Municipe } from '@/types/municipe';
 
 const NAVY = '#0f2d52';
@@ -394,7 +395,7 @@ const FichaMunicipePDF: React.FC<Props> = ({ municipe }) => {
                 <View style={styles.headerWrap}>
                     <View style={styles.headerTop}>
                         <Text style={styles.govLabel}>REPÚBLICA DE ANGOLA</Text>
-                        <Text style={styles.govLabel}>SIGID — DMRMAB</Text>
+                        <Text style={styles.govLabel}>{NOME_SISTEMA}</Text>
                     </View>
                     <View style={styles.titleBlock}>
                         <Text style={styles.mainTitle}>FICHA DO MUNÍCIPE</Text>
@@ -779,20 +780,10 @@ const FichaMunicipePDF: React.FC<Props> = ({ municipe }) => {
                             Assinatura do Responsável
                         </Text>
                     </View>
-                    <View style={[styles.signBlock, { alignItems: 'center' }]}>
-                        <Text
-                            style={{
-                                fontSize: 6.5,
-                                color: '#94a3b8',
-                                marginBottom: 14,
-                            }}
-                        >
+                    <View style={styles.signBlock}>
+                        <Text style={[styles.signLabel, { marginTop: 12 }]}>
                             Benguela, {now}
                         </Text>
-                    </View>
-                    <View style={styles.signBlock}>
-                        <View style={styles.signLine} />
-                        <Text style={styles.signLabel}>Carimbo / Selo</Text>
                     </View>
                 </View>
 
@@ -800,10 +791,7 @@ const FichaMunicipePDF: React.FC<Props> = ({ municipe }) => {
                 <View style={styles.footer}>
                     <View style={styles.footerRule} />
                     <View style={styles.footerRow}>
-                        <Text style={styles.footerText}>
-                            SIGID — Sistema Integrado de Gestão e Identificação
-                            de Dados
-                        </Text>
+                        <Text style={styles.footerText}>{NOME_SISTEMA}</Text>
                         <Text style={styles.footerText}>
                             Confidencial · Gerado em {now}
                         </Text>

@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 
 import AppLayout from '@/layouts/app-layout';
+import { NOME_SISTEMA } from '@/lib/sistema';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -413,7 +414,7 @@ export default function LocalizacoesIndex({
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Localizações — SIGID" />
+            <Head title={`Localizações — ${NOME_SISTEMA}`} />
 
             <div className="flex flex-1 flex-col gap-6 p-6">
                 {/* Cabeçalho */}

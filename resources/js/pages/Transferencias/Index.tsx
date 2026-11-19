@@ -6,7 +6,9 @@ import * as z from 'zod';
 import { format } from 'date-fns';
 import { pt } from 'date-fns/locale';
 
+import { useAppDialog } from '@/components/app-dialog-provider';
 import AppLayout from '@/layouts/app-layout';
+import { NOME_SISTEMA } from '@/lib/sistema';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -137,6 +139,7 @@ export default function TransferenciasIndex({
     municipios,
     filters: initialFilters,
 }: Props) {
+    const { confirm, alert } = useAppDialog();
     const { props } = usePage();
     const user = props.auth?.user;
     const currentFilters = props.filters || initialFilters || {};
@@ -242,20 +245,25 @@ export default function TransferenciasIndex({
         });
     };
 
-    const handleDelete = (transferencia: Transferencia) => {
-        if (confirm('Remover esta solicitação de transferência?')) {
-            router.delete(`/transferencias/${transferencia.id}`);
-        }
+    const handleDelete = async (transferencia: Transferencia) => {
+        const confirmado = await confirm({
+            title: 'Remover transferência',
+            description: 'Remover esta solicitação de transferência?',
+            confirmLabel: 'Remover',
+            destructive: true,
+        });
+        if (!confirmado) return;
+        router.delete(`/transferencias/${transferencia.id}`);
     };
 
-    const handleAprovar = (transferencia: Transferencia) => {
-        if (
-            confirm(
-                `Aprovar transferência de ${transferencia.recrutamento.municipe.nome_completo}?`,
-            )
-        ) {
-            router.post(`/transferencias/${transferencia.id}/aprovar`, {});
-        }
+    const handleAprovar = async (transferencia: Transferencia) => {
+        const confirmado = await confirm({
+            title: 'Aprovar transferência',
+            description: `Aprovar transferência de ${transferencia.recrutamento.municipe.nome_completo}?`,
+            confirmLabel: 'Aprovar',
+        });
+        if (!confirmado) return;
+        router.post(`/transferencias/${transferencia.id}/aprovar`, {});
     };
 
     // ── PDF ───────────────────────────────────────────────────────────────────
@@ -266,7 +274,10 @@ export default function TransferenciasIndex({
             onSuccess: () => setPrintingId(null),
             onError: () => {
                 setPrintingId(null);
-                alert('Erro ao gerar o PDF. Tente novamente.');
+                void alert({
+                    title: 'Erro ao gerar PDF',
+                    description: 'Erro ao gerar o PDF. Tente novamente.',
+                });
             },
         })();
     };
@@ -292,7 +303,7 @@ export default function TransferenciasIndex({
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Transferências - SIGID" />
+            <Head title={`Transferências - ${NOME_SISTEMA}`} />
 
             <div className="flex h-full flex-1 flex-col gap-4 rounded-xl p-4">
                 {/* Cabeçalho */}
