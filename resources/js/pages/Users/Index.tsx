@@ -82,10 +82,14 @@ const userSchema = z
             path: ['data_nascimento'],
         },
     )
-    .refine((data) => data.role !== 'municipe' || ['M', 'F'].includes(data.sexo ?? ''), {
-        message: 'O sexo é obrigatório para munícipes',
-        path: ['sexo'],
-    });
+    .refine(
+        (data) =>
+            data.role !== 'municipe' || ['M', 'F'].includes(data.sexo ?? ''),
+        {
+            message: 'O sexo é obrigatório para munícipes',
+            path: ['sexo'],
+        },
+    );
 
 type UserFormData = z.infer<typeof userSchema>;
 
@@ -275,7 +279,7 @@ export default function UsersIndex({ users, roleOptions }: Props) {
                 </div>
 
                 {/* TABELA */}
-                <div className="rounded-md border bg-white">
+                <div className="rounded-md border bg-background">
                     <Table>
                         <TableHeader>
                             <TableRow>
@@ -416,7 +420,8 @@ export default function UsersIndex({ users, roleOptions }: Props) {
                                 onValueChange={(value) =>
                                     form.setValue(
                                         'role',
-                                        value as 'admin' | 'custom' | 'municipe',
+                                        value as
+                                            'admin' | 'custom' | 'municipe',
                                     )
                                 }
                             >
@@ -518,7 +523,8 @@ export default function UsersIndex({ users, roleOptions }: Props) {
                                 onValueChange={(value) =>
                                     form.setValue(
                                         'role',
-                                        value as 'admin' | 'custom' | 'municipe',
+                                        value as
+                                            'admin' | 'custom' | 'municipe',
                                     )
                                 }
                             >
