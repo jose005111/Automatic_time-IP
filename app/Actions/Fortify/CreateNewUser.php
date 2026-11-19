@@ -24,11 +24,16 @@ class CreateNewUser implements CreatesNewUsers
             'password' => $this->passwordRules(),
         ])->validate();
 
+        // O primeiro utilizador do sistema é sempre admin.
+        // Registos subsequentes via Fortify (se permitidos) recebem 'custom'.
+        // Na prática o register está bloqueado após o 1º utilizador (ver FortifyServiceProvider).
+        $role = User::count() === 0 ? 'admin' : 'custom';
+
         return User::create([
-            'name' => $input['name'],
-            'email' => $input['email'],
+            'name'     => $input['name'],
+            'email'    => $input['email'],
             'password' => $input['password'],
-            'role' => 'admin',
+            'role'     => $role,
         ]);
     }
 }

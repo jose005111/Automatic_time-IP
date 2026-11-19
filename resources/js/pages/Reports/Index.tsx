@@ -35,7 +35,7 @@ import {
     Clock,
 } from 'lucide-react';
 import { type BreadcrumbItem } from '@/types';
-import generateRelatorioEstatisticasPDF from '@/lib/pdf/generateRelatorioEstatisticasPDF';
+import generateRelatorioEstatisticasPDF from '@/lib/pdf/Generaterelatorioestatisticaspdf';
 
 interface Municipio {
     id: number;

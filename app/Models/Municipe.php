@@ -25,6 +25,7 @@ class Municipe extends Model
         'bi_data_validade',
         'telefone',
         'celular',
+        'foto',
         'id_pai',
         'id_mae',
     ];
@@ -74,4 +75,9 @@ class Municipe extends Model
     {
         return $this->hasMany(Recrutamento::class, 'id_municipe');
     }
+
+public function usuarios(): HasMany
+{
+    return $this->hasMany(User::class, 'id_municipe');
+}
 }

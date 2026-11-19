@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -9,10 +9,21 @@ import { Button } from '@/components/ui/button';
 import {
     Dialog,
     DialogContent,
+    DialogDescription,
     DialogHeader,
     DialogTitle,
     DialogFooter,
 } from '@/components/ui/dialog';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
     Form,
     FormControl,
@@ -38,8 +49,22 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Edit, Trash2, Search, X } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import {
+    Plus,
+    Edit,
+    Trash2,
+    Search,
+    X,
+    MapPin,
+    Building2,
+    ChevronLeft,
+    ChevronRight,
+} from 'lucide-react';
 import { type BreadcrumbItem } from '@/types';
+import { toast } from 'sonner';
+
+// ─── Tipos ────────────────────────────────────────────────────────────────────
 
 interface Provincia {
     id: number;
@@ -47,10 +72,27 @@ interface Provincia {
     municipios_count?: number;
 }
 
+interface PaginatedProvincia {
+    data: Provincia[];
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+}
+
 interface Municipio {
     id: number;
     nome: string;
+    id_provincia?: number;
     provincia?: Provincia;
+}
+
+interface PaginatedMunicipio {
+    data: Municipio[];
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
 }
 
 interface Filters {
@@ -59,25 +101,85 @@ interface Filters {
 }
 
 interface Props {
-    provincias: Provincia[];
-    municipios: {
-        data: Municipio[];
-        current_page: number;
-        last_page: number;
-        per_page: number;
-        total: number;
-    };
+    provincias: PaginatedProvincia;
+    municipios: PaginatedMunicipio;
     filters: Filters;
 }
 
+// ─── Schemas ─────────────────────────────────────────────────────────────────
+
 const provinciaSchema = z.object({
-    nome: z.string().min(3, 'Nome da província é obrigatório'),
+    nome: z
+        .string()
+        .min(2, 'Mínimo 2 caracteres')
+        .max(100, 'Máximo 100 caracteres'),
 });
 
 const municipioSchema = z.object({
-    nome: z.string().min(3, 'Nome do município é obrigatório'),
-    id_provincia: z.coerce.number().min(1, 'Selecione uma província'),
+    nome: z
+        .string()
+        .min(2, 'Mínimo 2 caracteres')
+        .max(150, 'Máximo 150 caracteres'),
+    id_provincia: z.string().min(1, 'Selecione uma província'),
 });
+
+type ProvinciaForm = z.infer<typeof provinciaSchema>;
+type MunicipioForm = z.infer<typeof municipioSchema>;
+
+// ─── Componente de Paginação Reutilizável ───────────────────────────────────
+
+interface PaginationProps {
+    currentPage: number;
+    lastPage: number;
+    pageParam: 'provincias_page' | 'municipios_page';
+    buildHref: (
+        param: 'provincias_page' | 'municipios_page',
+        page: number,
+    ) => string;
+}
+
+function Pagination({
+    currentPage,
+    lastPage,
+    pageParam,
+    buildHref,
+}: PaginationProps) {
+    if (lastPage <= 1) return null;
+
+    return (
+        <div className="mt-4 flex items-center justify-center gap-2">
+            <Link
+                href={buildHref(pageParam, currentPage - 1)}
+                className={`inline-flex h-9 items-center justify-center rounded-md border px-4 text-sm transition-colors ${
+                    currentPage <= 1
+                        ? 'pointer-events-none opacity-50'
+                        : 'hover:bg-accent'
+                }`}
+            >
+                <ChevronLeft className="mr-1 h-4 w-4" />
+                Anterior
+            </Link>
+
+            <span className="text-sm text-muted-foreground">
+                Página {currentPage} de {lastPage}
+            </span>
+
+            <Link
+                href={buildHref(pageParam, currentPage + 1)}
+                className={`inline-flex h-9 items-center justify-center rounded-md border px-4 text-sm transition-colors ${
+                    currentPage >= lastPage
+                        ? 'pointer-events-none opacity-50'
+                        : 'hover:bg-accent'
+                }`}
+            >
+                Próximo
+                <ChevronRight className="ml-1 h-4 w-4" />
+            </Link>
+        </div>
+    );
+}
+
+// ─── Componente Principal ─────────────────────────────────────────────────────
 
 export default function LocalizacoesIndex({
     provincias,
@@ -85,12 +187,13 @@ export default function LocalizacoesIndex({
     filters: initialFilters,
 }: Props) {
     const { props } = usePage();
-    const currentFilters = props.filters || initialFilters || {};
+    const currentFilters = (props.filters as Filters) || initialFilters || {};
 
     const [activeTab, setActiveTab] = useState<'provincias' | 'municipios'>(
         'provincias',
     );
 
+    // Modais
     const [isProvinciaOpen, setIsProvinciaOpen] = useState(false);
     const [isMunicipioOpen, setIsMunicipioOpen] = useState(false);
     const [editingProvincia, setEditingProvincia] = useState<Provincia | null>(
@@ -100,6 +203,13 @@ export default function LocalizacoesIndex({
         null,
     );
 
+    // Confirmação de delete
+    const [deleteProvinciaTarget, setDeleteProvinciaTarget] =
+        useState<Provincia | null>(null);
+    const [deleteMunicipioTarget, setDeleteMunicipioTarget] =
+        useState<Municipio | null>(null);
+
+    // Filtros
     const [searchTerm, setSearchTerm] = useState(currentFilters.search || '');
     const [provinciaFilter, setProvinciaFilter] = useState(
         currentFilters.id_provincia || '',
@@ -107,29 +217,89 @@ export default function LocalizacoesIndex({
 
     const breadcrumbs: BreadcrumbItem[] = [
         { title: 'Dashboard', href: '/dashboard' },
-        { title: 'Localizações', href: '/localizacoes' },
+        { title: 'Localizações', href: '/provincias' },
     ];
 
-    const provinciaForm = useForm<z.infer<typeof provinciaSchema>>({
+    // ── Forms (DEVEM vir antes dos useEffect que os usam) ───────────────────
+
+    const provinciaForm = useForm<ProvinciaForm>({
         resolver: zodResolver(provinciaSchema),
         defaultValues: { nome: '' },
     });
 
-    const municipioForm = useForm<z.infer<typeof municipioSchema>>({
+    const municipioForm = useForm<MunicipioForm>({
         resolver: zodResolver(municipioSchema),
-        defaultValues: { nome: '', id_provincia: 0 },
+        defaultValues: { nome: '', id_provincia: '' },
     });
 
-    // ==================== FILTROS MUNICÍPIOS ====================
-    const applyMunicipioFilters = (newFilters: Partial<Filters>) => {
-        const params: any = { ...currentFilters, ...newFilters };
-        Object.keys(params).forEach((key) => {
-            if (!params[key]) delete params[key];
+    // ── Sincronizar erros do servidor → formulário Província ────────────────
+
+    useEffect(() => {
+        if (!isProvinciaOpen) return;
+
+        const serverErrors = (props as any).errors as
+            | Record<string, string | string[]>
+            | undefined;
+        if (!serverErrors) return;
+
+        Object.entries(serverErrors).forEach(([field, message]) => {
+            if (field === 'nome') {
+                provinciaForm.setError('nome', {
+                    type: 'server',
+                    message: Array.isArray(message) ? message[0] : message,
+                });
+            }
         });
-        router.get('/localizacoes', params, {
+    }, [props.errors, isProvinciaOpen, provinciaForm]);
+
+    // ── Sincronizar erros do servidor → formulário Município ─────────────────
+
+    useEffect(() => {
+        if (!isMunicipioOpen) return;
+
+        const serverErrors = (props as any).errors as
+            | Record<string, string | string[]>
+            | undefined;
+        if (!serverErrors) return;
+
+        Object.entries(serverErrors).forEach(([field, message]) => {
+            if (field === 'nome' || field === 'id_provincia') {
+                municipioForm.setError(field as 'nome' | 'id_provincia', {
+                    type: 'server',
+                    message: Array.isArray(message) ? message[0] : message,
+                });
+            }
+        });
+    }, [props.errors, isMunicipioOpen, municipioForm]);
+
+    // ── Filtros ──────────────────────────────────────────────────────────────
+
+    const applyMunicipioFilters = (newFilters: Partial<Filters>) => {
+        const params: Record<string, string> = {};
+        const merged = { ...currentFilters, ...newFilters };
+        if (merged.search) params.search = merged.search;
+        if (merged.id_provincia) params.id_provincia = merged.id_provincia;
+        router.get('/provincias', params, {
             preserveState: true,
             replace: true,
         });
+    };
+
+    const buildPageHref = (
+        pageParam: 'provincias_page' | 'municipios_page',
+        page: number,
+    ) => {
+        const params = new URLSearchParams();
+        if (searchTerm) params.set('search', searchTerm);
+        if (provinciaFilter) params.set('id_provincia', provinciaFilter);
+        params.set(pageParam, String(page));
+        return `/provincias?${params.toString()}`;
+    };
+
+    const clearFilters = () => {
+        setSearchTerm('');
+        setProvinciaFilter('');
+        router.get('/provincias', {}, { preserveState: true, replace: true });
     };
 
     const handleSearch = (value: string) => {
@@ -143,15 +313,13 @@ export default function LocalizacoesIndex({
         applyMunicipioFilters({ id_provincia: newValue });
     };
 
-    const clearFilters = () => {
-        setSearchTerm('');
-        setProvinciaFilter('');
-        router.get('/localizacoes', {}, { preserveState: true, replace: true });
-    };
+    const hasActiveFilters = searchTerm || provinciaFilter;
 
-    // ==================== PROVÍNCIAS ====================
+    // ── Províncias ───────────────────────────────────────────────────────────
+
     const openCreateProvincia = () => {
-        provinciaForm.reset();
+        provinciaForm.reset({ nome: '' });
+        provinciaForm.clearErrors();
         setEditingProvincia(null);
         setIsProvinciaOpen(true);
     };
@@ -159,27 +327,41 @@ export default function LocalizacoesIndex({
     const openEditProvincia = (prov: Provincia) => {
         setEditingProvincia(prov);
         provinciaForm.reset({ nome: prov.nome });
+        provinciaForm.clearErrors();
         setIsProvinciaOpen(true);
     };
 
-    const onSubmitProvincia = (values: z.infer<typeof provinciaSchema>) => {
+    const onSubmitProvincia = (values: ProvinciaForm) => {
         if (editingProvincia) {
-            router.put(`/provincias/${editingProvincia.id}`, values);
+            router.put(`/provincias/${editingProvincia.id}`, values, {
+                onSuccess: () => setIsProvinciaOpen(false),
+                // Erros de validação vão para props.errors → useEffect acima
+            });
         } else {
-            router.post('/provincias', values);
-        }
-        setIsProvinciaOpen(false);
-    };
-
-    const deleteProvincia = (id: number) => {
-        if (confirm('Tem certeza que deseja remover esta província?')) {
-            router.delete(`/provincias/${id}`);
+            router.post('/provincias', values, {
+                onSuccess: () => setIsProvinciaOpen(false),
+            });
         }
     };
 
-    // ==================== MUNICÍPIOS ====================
+    const confirmDeleteProvincia = () => {
+        if (!deleteProvinciaTarget) return;
+
+        router.delete(`/provincias/${deleteProvinciaTarget.id}`, {
+            onSuccess: () => setDeleteProvinciaTarget(null),
+            onError: (errors) => {
+                setDeleteProvinciaTarget(null);
+                const errorMsg = errors.error || 'Erro ao remover província.';
+                toast.error(errorMsg);
+            },
+        });
+    };
+
+    // ── Municípios ───────────────────────────────────────────────────────────
+
     const openCreateMunicipio = () => {
-        municipioForm.reset({ nome: '', id_provincia: 0 });
+        municipioForm.reset({ nome: '', id_provincia: '' });
+        municipioForm.clearErrors();
         setEditingMunicipio(null);
         setIsMunicipioOpen(true);
     };
@@ -188,42 +370,60 @@ export default function LocalizacoesIndex({
         setEditingMunicipio(mun);
         municipioForm.reset({
             nome: mun.nome,
-            id_provincia: mun.provincia?.id || 0,
+            id_provincia:
+                mun.id_provincia?.toString() ??
+                mun.provincia?.id?.toString() ??
+                '',
         });
+        municipioForm.clearErrors();
         setIsMunicipioOpen(true);
     };
 
-    const onSubmitMunicipio = (values: z.infer<typeof municipioSchema>) => {
+    const onSubmitMunicipio = (values: MunicipioForm) => {
+        const payload = {
+            nome: values.nome,
+            id_provincia: Number(values.id_provincia),
+        };
+
         if (editingMunicipio) {
-            router.put(`/municipios/${editingMunicipio.id}`, values);
+            router.put(`/municipios/${editingMunicipio.id}`, payload, {
+                onSuccess: () => setIsMunicipioOpen(false),
+            });
         } else {
-            router.post('/municipios', values);
-        }
-        setIsMunicipioOpen(false);
-    };
-
-    const deleteMunicipio = (id: number) => {
-        if (confirm('Tem certeza que deseja remover este município?')) {
-            router.delete(`/municipios/${id}`);
+            router.post('/municipios', payload, {
+                onSuccess: () => setIsMunicipioOpen(false),
+            });
         }
     };
 
-    const hasActiveFilters = searchTerm || provinciaFilter;
+    const confirmDeleteMunicipio = () => {
+        if (!deleteMunicipioTarget) return;
+
+        router.delete(`/municipios/${deleteMunicipioTarget.id}`, {
+            onSuccess: () => setDeleteMunicipioTarget(null),
+            onError: (errors) => {
+                setDeleteMunicipioTarget(null);
+                const errorMsg = errors.error || 'Erro ao remover município.';
+                toast.error(errorMsg);
+            },
+        });
+    };
+
+    // ── Render ────────────────────────────────────────────────────────────────
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Localizações - SIGID" />
+            <Head title="Localizações — SIGID" />
 
-            <div className="flex h-full flex-1 flex-col gap-4 rounded-xl p-4">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-3xl font-bold tracking-tight">
-                            Localizações
-                        </h1>
-                        <p className="text-muted-foreground">
-                            Gestão de Províncias e Municípios de Angola
-                        </p>
-                    </div>
+            <div className="flex flex-1 flex-col gap-6 p-6">
+                {/* Cabeçalho */}
+                <div>
+                    <h1 className="text-3xl font-bold tracking-tight">
+                        Localizações
+                    </h1>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                        Gestão de províncias e municípios de Angola
+                    </p>
                 </div>
 
                 <Tabs
@@ -233,14 +433,37 @@ export default function LocalizacoesIndex({
                     }
                     className="w-full"
                 >
-                    <TabsList className="grid w-full grid-cols-2 md:w-[400px]">
-                        <TabsTrigger value="provincias">Províncias</TabsTrigger>
-                        <TabsTrigger value="municipios">Municípios</TabsTrigger>
+                    <TabsList className="grid w-full grid-cols-2 md:w-[360px]">
+                        <TabsTrigger value="provincias" className="gap-2">
+                            <Building2 className="h-4 w-4" />
+                            Províncias
+                            <Badge
+                                variant="secondary"
+                                className="ml-1 h-5 px-1.5 text-xs"
+                            >
+                                {provincias.total}
+                            </Badge>
+                        </TabsTrigger>
+                        <TabsTrigger value="municipios" className="gap-2">
+                            <MapPin className="h-4 w-4" />
+                            Municípios
+                            <Badge
+                                variant="secondary"
+                                className="ml-1 h-5 px-1.5 text-xs"
+                            >
+                                {municipios.total}
+                            </Badge>
+                        </TabsTrigger>
                     </TabsList>
 
-                    {/* ==================== PROVÍNCIAS ==================== */}
+                    {/* ══ PROVÍNCIAS ══════════════════════════════════════════ */}
                     <TabsContent value="provincias" className="mt-4">
-                        <div className="mb-4 flex justify-end">
+                        <div className="mb-4 flex items-center justify-between">
+                            <p className="text-sm text-muted-foreground">
+                                {provincias.total} província
+                                {provincias.total !== 1 ? 's' : ''} registada
+                                {provincias.total !== 1 ? 's' : ''}
+                            </p>
                             <Button
                                 onClick={openCreateProvincia}
                                 className="gap-2"
@@ -252,12 +475,12 @@ export default function LocalizacoesIndex({
                         <div className="rounded-md border">
                             <Table>
                                 <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Nome da Província</TableHead>
-                                        <TableHead className="text-center">
+                                    <TableRow className="bg-muted/40">
+                                        <TableHead>Nome</TableHead>
+                                        <TableHead className="w-[120px] text-center">
                                             Municípios
                                         </TableHead>
-                                        <TableHead className="text-right">
+                                        <TableHead className="w-[120px] text-right">
                                             Ações
                                         </TableHead>
                                     </TableRow>
@@ -270,30 +493,36 @@ export default function LocalizacoesIndex({
                                                     {prov.nome}
                                                 </TableCell>
                                                 <TableCell className="text-center">
-                                                    {prov.municipios_count || 0}
+                                                    <Badge variant="outline">
+                                                        {prov.municipios_count ??
+                                                            0}
+                                                    </Badge>
                                                 </TableCell>
                                                 <TableCell className="text-right">
-                                                    <div className="flex justify-end gap-2">
+                                                    <div className="flex justify-end gap-1">
                                                         <Button
                                                             variant="ghost"
                                                             size="icon"
+                                                            className="h-8 w-8"
                                                             onClick={() =>
                                                                 openEditProvincia(
                                                                     prov,
                                                                 )
                                                             }
+                                                            title="Editar"
                                                         >
                                                             <Edit className="h-4 w-4" />
                                                         </Button>
                                                         <Button
                                                             variant="ghost"
                                                             size="icon"
+                                                            className="h-8 w-8 text-destructive hover:text-destructive"
                                                             onClick={() =>
-                                                                deleteProvincia(
-                                                                    prov.id,
+                                                                setDeleteProvinciaTarget(
+                                                                    prov,
                                                                 )
                                                             }
-                                                            className="text-destructive"
+                                                            title="Remover"
                                                         >
                                                             <Trash2 className="h-4 w-4" />
                                                         </Button>
@@ -305,51 +534,31 @@ export default function LocalizacoesIndex({
                                         <TableRow>
                                             <TableCell
                                                 colSpan={3}
-                                                className="h-24 text-center"
+                                                className="h-24 text-center text-muted-foreground"
                                             >
-                                                Nenhuma província encontrada.
+                                                Nenhuma província registada.
                                             </TableCell>
                                         </TableRow>
                                     )}
                                 </TableBody>
                             </Table>
                         </div>
-                        {/* Paginação Municípios */}
-                        {provincias.last_page > 1 && (
-                            <div className="mt-4 flex items-center justify-between">
-                                <p className="text-sm text-muted-foreground">
-                                    Mostrando {provincias.data.length} de{' '}
-                                    {provincias.total} provincias
-                                </p>
-                                <div className="flex gap-2">
-                                    {provincias.current_page > 1 && (
-                                        <Link
-                                            href={`/localizacoes?page=${provincias.current_page - 1}`}
-                                            className="inline-flex h-9 items-center justify-center rounded-md border px-4 text-sm"
-                                        >
-                                            Anterior
-                                        </Link>
-                                    )}
-                                    {provincias.current_page <
-                                        provincias.last_page && (
-                                        <Link
-                                            href={`/localizacoes?page=${provincias.current_page + 1}`}
-                                            className="inline-flex h-9 items-center justify-center rounded-md border px-4 text-sm"
-                                        >
-                                            Próximo
-                                        </Link>
-                                    )}
-                                </div>
-                            </div>
-                        )}
+
+                        <Pagination
+                            currentPage={provincias.current_page}
+                            lastPage={provincias.last_page}
+                            pageParam="provincias_page"
+                            buildHref={buildPageHref}
+                        />
                     </TabsContent>
 
-                    {/* ==================== MUNICÍPIOS (com paginação e filtros) ==================== */}
+                    {/* ══ MUNICÍPIOS ══════════════════════════════════════════ */}
                     <TabsContent value="municipios" className="mt-4">
-                        <div className="mb-4 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-                            <div className="flex-1">
-                                <div className="relative max-w-sm">
-                                    <Search className="absolute top-3 left-3 h-4 w-4 text-muted-foreground" />
+                        {/* Filtros */}
+                        <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                            <div className="flex flex-1 gap-2">
+                                <div className="relative max-w-xs flex-1">
+                                    <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                                     <Input
                                         placeholder="Pesquisar município..."
                                         value={searchTerm}
@@ -359,14 +568,11 @@ export default function LocalizacoesIndex({
                                         className="pl-9"
                                     />
                                 </div>
-                            </div>
-
-                            <div className="flex gap-2">
                                 <Select
                                     value={provinciaFilter || 'all'}
                                     onValueChange={handleProvinciaFilter}
                                 >
-                                    <SelectTrigger className="w-[220px]">
+                                    <SelectTrigger className="w-[200px]">
                                         <SelectValue placeholder="Filtrar por província" />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -383,7 +589,6 @@ export default function LocalizacoesIndex({
                                         ))}
                                     </SelectContent>
                                 </Select>
-
                                 {hasActiveFilters && (
                                     <Button
                                         variant="outline"
@@ -393,23 +598,22 @@ export default function LocalizacoesIndex({
                                         <X className="h-4 w-4" /> Limpar
                                     </Button>
                                 )}
-
-                                <Button
-                                    onClick={openCreateMunicipio}
-                                    className="gap-2"
-                                >
-                                    <Plus className="h-4 w-4" /> Novo Município
-                                </Button>
                             </div>
+                            <Button
+                                onClick={openCreateMunicipio}
+                                className="gap-2"
+                            >
+                                <Plus className="h-4 w-4" /> Novo Município
+                            </Button>
                         </div>
 
                         <div className="rounded-md border">
                             <Table>
                                 <TableHeader>
-                                    <TableRow>
+                                    <TableRow className="bg-muted/40">
                                         <TableHead>Município</TableHead>
                                         <TableHead>Província</TableHead>
-                                        <TableHead className="text-right">
+                                        <TableHead className="w-[120px] text-right">
                                             Ações
                                         </TableHead>
                                     </TableRow>
@@ -422,30 +626,42 @@ export default function LocalizacoesIndex({
                                                     {mun.nome}
                                                 </TableCell>
                                                 <TableCell>
-                                                    {mun.provincia?.nome || '—'}
+                                                    {mun.provincia?.nome ? (
+                                                        <Badge
+                                                            variant="outline"
+                                                            className="font-normal"
+                                                        >
+                                                            {mun.provincia.nome}
+                                                        </Badge>
+                                                    ) : (
+                                                        '—'
+                                                    )}
                                                 </TableCell>
                                                 <TableCell className="text-right">
-                                                    <div className="flex justify-end gap-2">
+                                                    <div className="flex justify-end gap-1">
                                                         <Button
                                                             variant="ghost"
                                                             size="icon"
+                                                            className="h-8 w-8"
                                                             onClick={() =>
                                                                 openEditMunicipio(
                                                                     mun,
                                                                 )
                                                             }
+                                                            title="Editar"
                                                         >
                                                             <Edit className="h-4 w-4" />
                                                         </Button>
                                                         <Button
                                                             variant="ghost"
                                                             size="icon"
+                                                            className="h-8 w-8 text-destructive hover:text-destructive"
                                                             onClick={() =>
-                                                                deleteMunicipio(
-                                                                    mun.id,
+                                                                setDeleteMunicipioTarget(
+                                                                    mun,
                                                                 )
                                                             }
-                                                            className="text-destructive"
+                                                            title="Remover"
                                                         >
                                                             <Trash2 className="h-4 w-4" />
                                                         </Button>
@@ -457,10 +673,11 @@ export default function LocalizacoesIndex({
                                         <TableRow>
                                             <TableCell
                                                 colSpan={3}
-                                                className="h-24 text-center"
+                                                className="h-24 text-center text-muted-foreground"
                                             >
-                                                Nenhum município encontrado com
-                                                os filtros aplicados.
+                                                {hasActiveFilters
+                                                    ? 'Nenhum município encontrado com os filtros aplicados.'
+                                                    : 'Nenhum município registado.'}
                                             </TableCell>
                                         </TableRow>
                                     )}
@@ -468,47 +685,33 @@ export default function LocalizacoesIndex({
                             </Table>
                         </div>
 
-                        {/* Paginação Municípios */}
-                        {municipios.last_page > 1 && (
-                            <div className="mt-4 flex items-center justify-between">
-                                <p className="text-sm text-muted-foreground">
-                                    Mostrando {municipios.data.length} de{' '}
-                                    {municipios.total} municípios
-                                </p>
-                                <div className="flex gap-2">
-                                    {municipios.current_page > 1 && (
-                                        <Link
-                                            href={`/localizacoes?page=${municipios.current_page - 1}`}
-                                            className="inline-flex h-9 items-center justify-center rounded-md border px-4 text-sm"
-                                        >
-                                            Anterior
-                                        </Link>
-                                    )}
-                                    {municipios.current_page <
-                                        municipios.last_page && (
-                                        <Link
-                                            href={`/localizacoes?page=${municipios.current_page + 1}`}
-                                            className="inline-flex h-9 items-center justify-center rounded-md border px-4 text-sm"
-                                        >
-                                            Próximo
-                                        </Link>
-                                    )}
-                                </div>
-                            </div>
-                        )}
+                        <Pagination
+                            currentPage={municipios.current_page}
+                            lastPage={municipios.last_page}
+                            pageParam="municipios_page"
+                            buildHref={buildPageHref}
+                        />
                     </TabsContent>
                 </Tabs>
             </div>
 
-            {/* ==================== MODAL PROVÍNCIA ==================== */}
+            {/* ══ MODAL: Província ════════════════════════════════════════════ */}
             <Dialog open={isProvinciaOpen} onOpenChange={setIsProvinciaOpen}>
-                <DialogContent>
+                <DialogContent className="max-w-sm">
                     <DialogHeader>
                         <DialogTitle>
                             {editingProvincia
                                 ? 'Editar Província'
                                 : 'Nova Província'}
                         </DialogTitle>
+                        {editingProvincia && (
+                            <DialogDescription>
+                                A editar:{' '}
+                                <span className="font-medium">
+                                    {editingProvincia.nome}
+                                </span>
+                            </DialogDescription>
+                        )}
                     </DialogHeader>
                     <Form {...provinciaForm}>
                         <form
@@ -522,10 +725,13 @@ export default function LocalizacoesIndex({
                                 name="nome"
                                 render={({ field }) => (
                                     <FormItem>
-                                        <FormLabel>Nome da Província</FormLabel>
+                                        <FormLabel>
+                                            Nome da Província *
+                                        </FormLabel>
                                         <FormControl>
                                             <Input
-                                                placeholder="Benguela"
+                                                placeholder="Ex: Benguela"
+                                                autoFocus
                                                 {...field}
                                             />
                                         </FormControl>
@@ -541,22 +747,46 @@ export default function LocalizacoesIndex({
                                 >
                                     Cancelar
                                 </Button>
-                                <Button type="submit">Salvar</Button>
+                                <Button
+                                    type="submit"
+                                    disabled={
+                                        provinciaForm.formState.isSubmitting
+                                    }
+                                >
+                                    {provinciaForm.formState.isSubmitting ? (
+                                        <span className="flex items-center gap-2">
+                                            <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                                            A guardar...
+                                        </span>
+                                    ) : editingProvincia ? (
+                                        'Guardar Alterações'
+                                    ) : (
+                                        'Criar Província'
+                                    )}
+                                </Button>
                             </DialogFooter>
                         </form>
                     </Form>
                 </DialogContent>
             </Dialog>
 
-            {/* ==================== MODAL MUNICÍPIO ==================== */}
+            {/* ══ MODAL: Município ════════════════════════════════════════════ */}
             <Dialog open={isMunicipioOpen} onOpenChange={setIsMunicipioOpen}>
-                <DialogContent>
+                <DialogContent className="max-w-sm">
                     <DialogHeader>
                         <DialogTitle>
                             {editingMunicipio
                                 ? 'Editar Município'
                                 : 'Novo Município'}
                         </DialogTitle>
+                        {editingMunicipio && (
+                            <DialogDescription>
+                                A editar:{' '}
+                                <span className="font-medium">
+                                    {editingMunicipio.nome}
+                                </span>
+                            </DialogDescription>
+                        )}
                     </DialogHeader>
                     <Form {...municipioForm}>
                         <form
@@ -570,10 +800,13 @@ export default function LocalizacoesIndex({
                                 name="nome"
                                 render={({ field }) => (
                                     <FormItem>
-                                        <FormLabel>Nome do Município</FormLabel>
+                                        <FormLabel>
+                                            Nome do Município *
+                                        </FormLabel>
                                         <FormControl>
                                             <Input
-                                                placeholder="Lobito"
+                                                placeholder="Ex: Lobito"
+                                                autoFocus
                                                 {...field}
                                             />
                                         </FormControl>
@@ -581,16 +814,15 @@ export default function LocalizacoesIndex({
                                     </FormItem>
                                 )}
                             />
-
                             <FormField
                                 control={municipioForm.control}
                                 name="id_provincia"
                                 render={({ field }) => (
                                     <FormItem>
-                                        <FormLabel>Província</FormLabel>
+                                        <FormLabel>Província *</FormLabel>
                                         <Select
                                             onValueChange={field.onChange}
-                                            value={field.value?.toString()}
+                                            value={field.value}
                                         >
                                             <FormControl>
                                                 <SelectTrigger>
@@ -598,7 +830,7 @@ export default function LocalizacoesIndex({
                                                 </SelectTrigger>
                                             </FormControl>
                                             <SelectContent>
-                                                {provincias.map((p) => (
+                                                {provincias.data.map((p) => (
                                                     <SelectItem
                                                         key={p.id}
                                                         value={p.id.toString()}
@@ -612,7 +844,6 @@ export default function LocalizacoesIndex({
                                     </FormItem>
                                 )}
                             />
-
                             <DialogFooter>
                                 <Button
                                     type="button"
@@ -621,12 +852,109 @@ export default function LocalizacoesIndex({
                                 >
                                     Cancelar
                                 </Button>
-                                <Button type="submit">Salvar</Button>
+                                <Button
+                                    type="submit"
+                                    disabled={
+                                        municipioForm.formState.isSubmitting
+                                    }
+                                >
+                                    {municipioForm.formState.isSubmitting ? (
+                                        <span className="flex items-center gap-2">
+                                            <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                                            A guardar...
+                                        </span>
+                                    ) : editingMunicipio ? (
+                                        'Guardar Alterações'
+                                    ) : (
+                                        'Criar Município'
+                                    )}
+                                </Button>
                             </DialogFooter>
                         </form>
                     </Form>
                 </DialogContent>
             </Dialog>
+
+            {/* ══ CONFIRM: Remover Província ══════════════════════════════════ */}
+            <AlertDialog
+                open={!!deleteProvinciaTarget}
+                onOpenChange={(o) => {
+                    if (!o) setDeleteProvinciaTarget(null);
+                }}
+            >
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Remover Província</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Tem a certeza que deseja remover a província{' '}
+                            <span className="font-semibold">
+                                {deleteProvinciaTarget?.nome}
+                            </span>
+                            ?
+                            {(deleteProvinciaTarget?.municipios_count ?? 0) >
+                                0 && (
+                                <span className="mt-1 block text-amber-600">
+                                    ⚠️ Esta província tem{' '}
+                                    {deleteProvinciaTarget?.municipios_count}{' '}
+                                    município(s) associado(s).
+                                    <br />
+                                    <strong>
+                                        Remova os municípios primeiro.
+                                    </strong>
+                                </span>
+                            )}
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={confirmDeleteProvincia}
+                            disabled={
+                                (deleteProvinciaTarget?.municipios_count ?? 0) >
+                                0
+                            }
+                            className={`${
+                                (deleteProvinciaTarget?.municipios_count ?? 0) >
+                                0
+                                    ? 'pointer-events-none opacity-50'
+                                    : 'bg-destructive text-white hover:bg-destructive/90'
+                            }`}
+                        >
+                            Remover
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            {/* ══ CONFIRM: Remover Município ══════════════════════════════════ */}
+            <AlertDialog
+                open={!!deleteMunicipioTarget}
+                onOpenChange={(o) => {
+                    if (!o) setDeleteMunicipioTarget(null);
+                }}
+            >
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Remover Município</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Tem a certeza que deseja remover o município{' '}
+                            <span className="font-semibold">
+                                {deleteMunicipioTarget?.nome}
+                            </span>
+                            ? Esta acção não pode ser revertida.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={confirmDeleteMunicipio}
+                            className="bg-destructive text-white hover:bg-destructive/90"
+                        >
+                            Remover
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </AppLayout>
     );
 }

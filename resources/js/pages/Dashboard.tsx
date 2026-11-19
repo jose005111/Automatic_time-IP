@@ -96,14 +96,14 @@ export default function Dashboard({
             color: '#10b981',
         },
         {
-            name: 'Outros',
+            name: 'Rejeitados',
             value: Math.max(
                 0,
                 (estatisticas.totalTransferencias || 0) -
                     estatisticas.recrutamentosPendentes -
                     estatisticas.recrutamentosAprovados,
             ),
-            color: '#6b7280',
+            color: '#f72525ff',
         },
     ].filter((item) => item.value > 0);
 

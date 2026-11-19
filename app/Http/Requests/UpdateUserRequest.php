@@ -18,10 +18,12 @@ class UpdateUserRequest extends FormRequest
             'name' => ['required', 'string', 'max:255'],
             'email' => [
                 'required', 'string', 'email', 'max:255',
-                Rule::unique('users')->ignore($this->route('user'))
+                Rule::unique('users')->ignore($this->route('user')),
             ],
             'password' => ['nullable', 'string', 'min:8', 'confirmed'],
-            'role' => ['required', Rule::in(['admin', 'custom'])],
+            'role' => ['required', Rule::in(['admin', 'custom', 'municipe'])],
+            'data_nascimento' => ['required_if:role,municipe', 'date', 'before:today'],
+            'sexo' => ['required_if:role,municipe', 'in:M,F'],
         ];
     }
 
@@ -29,6 +31,8 @@ class UpdateUserRequest extends FormRequest
     {
         return [
             'password.confirmed' => 'A confirmação da palavra-passe não coincide.',
+            'data_nascimento.required_if' => 'A data de nascimento é obrigatória para munícipes.',
+            'sexo.required_if' => 'O sexo é obrigatório para munícipes.',
         ];
     }
 }

@@ -23,11 +23,11 @@ import AppLogo from './app-logo';
 import { Link, usePage } from '@inertiajs/react';
 
 const mainNavItems: NavItem[] = [
-    { title: 'Dashboard', href: dashboard(), icon: LayoutDashboard },
+    { title: 'Menu-Principal', href: dashboard(), icon: LayoutDashboard },
     { title: 'Munícipes', href: '/municipes', icon: Users },
     { title: 'Recrutamentos', href: '/recrutamentos', icon: UserPlus },
     { title: 'Transferências', href: '/transferencias', icon: ArrowRightLeft },
-    { title: 'Localizações', href: '/localizacoes', icon: MapPin },
+    { title: 'Localizações', href: '/provincias', icon: MapPin },
     { title: 'Relatórios', href: '/relatorios', icon: FileText },
     { title: 'Utilizadores', href: '/utilizadores', icon: Users },
 ];
@@ -45,13 +45,25 @@ export function AppSidebar() {
             user.role === 'admin' ||
             user.role === 'administrador');
 
+    // ============================================
+    // Verifica se o utilizador é munícipe
+    // ============================================
+    const isMunicipe = !!user && user.role === 'municipe';
+
     // Filtra os itens do menu consoante o tipo de utilizador
-    const visibleNavItems = mainNavItems.filter((item) => {
-        if (item.title === 'Utilizadores') {
-            return isAdmin; // só admins veem este menu
-        }
-        return true;
-    });
+    const municipeNavItems: NavItem[] = [
+        { title: 'Meu Painel', href: '/meu-painel', icon: Users },
+        { title: 'Recrutamento', href: '/meu-recrutamento', icon: UserPlus },
+    ];
+
+    const visibleNavItems = isMunicipe
+        ? municipeNavItems
+        : mainNavItems.filter((item) => {
+              if (item.title === 'Utilizadores') {
+                  return isAdmin; // só admins veem este menu
+              }
+              return true;
+          });
 
     return (
         <Sidebar collapsible="icon" variant="inset">
@@ -59,18 +71,19 @@ export function AppSidebar() {
                 <SidebarMenu>
                     <SidebarMenuItem>
                         <SidebarMenuButton size="lg" asChild>
-                            <Link href={dashboard()} prefetch>
+                            <Link
+                                href={isMunicipe ? '/meu-painel' : dashboard()}
+                                prefetch
+                            >
                                 <AppLogo />
                             </Link>
                         </SidebarMenuButton>
                     </SidebarMenuItem>
                 </SidebarMenu>
             </SidebarHeader>
-
             <SidebarContent>
                 <NavMain items={visibleNavItems} />
             </SidebarContent>
-
             <SidebarFooter>{<NavUser />}</SidebarFooter>
         </Sidebar>
     );

@@ -51,7 +51,7 @@ import {
 } from 'lucide-react';
 import { type BreadcrumbItem } from '@/types';
 import MunicipeBox from '@/components/component/MunicipeBox';
-import generateCartaTransferenciaPDF from '@/lib/pdf/generateCartaTransferenciaPDF';
+import generateCartaTransferenciaPDF from '@/lib/pdf/Generatecartatransferenciapdf';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 

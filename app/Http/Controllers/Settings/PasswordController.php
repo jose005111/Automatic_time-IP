@@ -15,18 +15,35 @@ class PasswordController extends Controller
      */
     public function edit(): Response
     {
-        return Inertia::render('settings/password');
+        return Inertia::render('settings/password', [
+            'mustChangePassword' => (bool) request()->user()?->must_change_password,
+        ]);
     }
 
     /**
      * Update the user's password.
+     * Se o utilizador estava a fazer a troca obrigatória, limpa a flag
+     * e redireciona para o destino correcto conforme o role.
      */
     public function update(PasswordUpdateRequest $request): RedirectResponse
     {
-        $request->user()->update([
-            'password' => $request->password,
+        $user = $request->user();
+        $mustChange = (bool) $user->must_change_password;
+
+        $user->update([
+            'password'             => $request->password,
+            'must_change_password' => false,
         ]);
 
-        return back();
+        if ($mustChange) {
+            $destination = $user->role === 'municipe'
+                ? route('municipe.painel')
+                : route('dashboard');
+
+            return redirect($destination)
+                ->with('success', 'Senha alterada com sucesso! Bem-vindo ao SIGID.');
+        }
+
+        return back()->with('success', 'Senha actualizada com sucesso!');
     }
 }

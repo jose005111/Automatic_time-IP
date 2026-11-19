@@ -1,0 +1,76 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: resenseamento-app
+    restart: unless-stopped
+    command: ["dev"]
+    environment:
+      APP_NAME: "${DOCKER_APP_NAME:-Resenseamento}"
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_URL: http://localhost:8000
+      APP_LOCALE: pt
+      APP_FALLBACK_LOCALE: pt
+      VITE_DOCKER: "true"
+      DB_CONNECTION: mysql
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_DATABASE: "${DOCKER_DB_NAME:-resenseamento}"
+      DB_USERNAME: "${DOCKER_DB_USER:-resenseamento}"
+      DB_PASSWORD: "${DOCKER_DB_PASSWORD:-resenseamento}"
+      DB_SEED: "${DOCKER_DB_SEED:-false}"
+    ports:
+      - "${APP_PORT:-8000}:8000"
+      - "${VITE_PORT:-5173}:5173"
+    volumes:
+      - .:/var/www/html
+      - vendor:/var/www/html/vendor
+      - node_modules:/var/www/html/node_modules
+      - public-build:/var/www/html/public/build
+      - storage:/var/www/html/storage
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: mysql:8.0
+    container_name: resenseamento-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: "${DOCKER_ROOT_PASSWORD:-root}"
+      MYSQL_DATABASE: "${DOCKER_DB_NAME:-resenseamento}"
+      MYSQL_USER: "${DOCKER_DB_USER:-resenseamento}"
+      MYSQL_PASSWORD: "${DOCKER_DB_PASSWORD:-resenseamento}"
+    ports:
+      - "${DOCKER_DB_PORT:-3306}:3306"
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  phpmyadmin:
+    image: phpmyadmin:5
+    container_name: resenseamento-phpmyadmin
+    profiles: ["tools"]
+    restart: unless-stopped
+    environment:
+      PMA_HOST: db
+      PMA_USER: root
+      PMA_PASSWORD: "${DOCKER_ROOT_PASSWORD:-root}"
+    ports:
+      - "8080:80"
+    depends_on:
+      - db
+
+volumes:
+  db-data:
+  vendor:
+  node_modules:
+  public-build:
+  storage:

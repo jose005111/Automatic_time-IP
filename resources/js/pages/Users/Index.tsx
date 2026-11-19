@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Head, router, usePage } from '@inertiajs/react';
+import React, { useState } from 'react';
+import { Head, router } from '@inertiajs/react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -46,7 +46,9 @@ const userSchema = z
             .optional()
             .or(z.literal('')),
         password_confirmation: z.string().optional().or(z.literal('')),
-        role: z.enum(['admin', 'custom']),
+        role: z.enum(['admin', 'custom', 'municipe']),
+        data_nascimento: z.string().optional().or(z.literal('')),
+        sexo: z.enum(['M', 'F']).optional().or(z.literal('')),
     })
     .refine(
         (data) => {
@@ -59,7 +61,15 @@ const userSchema = z
             message: 'As palavras-passe não coincidem',
             path: ['password_confirmation'],
         },
-    );
+    )
+    .refine((data) => data.role !== 'municipe' || !!data.data_nascimento, {
+        message: 'A data de nascimento é obrigatória para munícipes',
+        path: ['data_nascimento'],
+    })
+    .refine((data) => data.role !== 'municipe' || ['M', 'F'].includes(data.sexo ?? ''), {
+        message: 'O sexo é obrigatório para munícipes',
+        path: ['sexo'],
+    });
 
 type UserFormData = z.infer<typeof userSchema>;
 
@@ -67,7 +77,9 @@ interface User {
     id: number;
     name: string;
     email: string;
-    role: 'admin' | 'custom';
+    role: 'admin' | 'custom' | 'municipe';
+    id_municipe?: number | null;
+    municipe?: { data_nascimento: string; sexo: string } | null;
     created_at: string;
 }
 
@@ -83,20 +95,6 @@ export default function UsersIndex({ users, roleOptions }: Props) {
     const [selectedUser, setSelectedUser] = useState<User | null>(null);
     const [confirmDelete, setConfirmDelete] = useState<User | null>(null);
 
-    const { props } = usePage<{
-        flash?: { success?: string; error?: string };
-    }>();
-
-    // ==================== NOVO: Ouve flash messages do backend ====================
-    useEffect(() => {
-        if (props.flash?.success) {
-            toast.success(props.flash.success);
-        }
-        if (props.flash?.error) {
-            toast.error(props.flash.error);
-        }
-    }, [props.flash]);
-
     // ==================== FORM ====================
     const form = useForm<UserFormData>({
         resolver: zodResolver(userSchema),
@@ -106,6 +104,8 @@ export default function UsersIndex({ users, roleOptions }: Props) {
             password: '',
             password_confirmation: '',
             role: 'custom',
+            data_nascimento: '',
+            sexo: '',
         },
     });
 
@@ -117,6 +117,8 @@ export default function UsersIndex({ users, roleOptions }: Props) {
             password: '',
             password_confirmation: '',
             role: 'custom',
+            data_nascimento: '',
+            sexo: '',
         });
         setIsCreateOpen(true);
     };
@@ -130,23 +132,74 @@ export default function UsersIndex({ users, roleOptions }: Props) {
             password: '', // nunca preenchemos a password
             password_confirmation: '',
             role: user.role,
+            data_nascimento: user.municipe?.data_nascimento?.slice(0, 10) ?? '',
+            sexo: user.municipe?.sexo ?? '',
         });
         setIsEditOpen(true);
     };
 
+    const buildPayload = (values: UserFormData) => {
+        const payload: Record<string, unknown> = { ...values };
+
+        if (payload.role !== 'municipe') {
+            delete payload.data_nascimento;
+            delete payload.sexo;
+        }
+
+        return payload;
+    };
+
+    const applyServerErrors = (errors: Record<string, string>) => {
+        Object.entries(errors).forEach(([field, message]) => {
+            if (field in form.getValues()) {
+                form.setError(field as keyof UserFormData, { message });
+            } else {
+                toast.error(message);
+            }
+        });
+    };
+
+    const renderMunicipeFields = () =>
+        form.watch('role') === 'municipe' ? (
+            <>
+                <div className="grid gap-2">
+                    <Label>Data de Nascimento</Label>
+                    <Input type="date" {...form.register('data_nascimento')} />
+                    {form.formState.errors.data_nascimento && (
+                        <p className="text-sm text-red-500">
+                            {form.formState.errors.data_nascimento.message}
+                        </p>
+                    )}
+                </div>
+
+                <div className="grid gap-2">
+                    <Label>Sexo</Label>
+                    <select
+                        {...form.register('sexo')}
+                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                    >
+                        <option value="">Selecione...</option>
+                        <option value="M">Masculino</option>
+                        <option value="F">Feminino</option>
+                    </select>
+                    {form.formState.errors.sexo && (
+                        <p className="text-sm text-red-500">
+                            {form.formState.errors.sexo.message}
+                        </p>
+                    )}
+                </div>
+            </>
+        ) : null;
+
     // ==================== SUBMIT CREATE ====================
     const onSubmitCreate = (values: UserFormData) => {
-        router.post('/utilizadores', values, {
+        router.post('/utilizadores', buildPayload(values), {
             onSuccess: () => {
                 setIsCreateOpen(false);
                 form.reset();
-                toast.success('Utilizador criado com sucesso!');
             },
             onError: (errors) => {
-                // Mostra erros de validação do backend
-                Object.values(errors).forEach((msg) =>
-                    toast.error(msg as string),
-                );
+                applyServerErrors(errors);
             },
         });
     };
@@ -155,17 +208,14 @@ export default function UsersIndex({ users, roleOptions }: Props) {
     const onSubmitEdit = (values: UserFormData) => {
         if (!selectedUser) return;
 
-        router.put(`/utilizadores/${selectedUser.id}`, values, {
+        router.put(`/utilizadores/${selectedUser.id}`, buildPayload(values), {
             onSuccess: () => {
                 setIsEditOpen(false);
                 setSelectedUser(null);
                 form.reset();
-                toast.success('Utilizador atualizado com sucesso!');
             },
             onError: (errors) => {
-                Object.values(errors).forEach((msg) =>
-                    toast.error(msg as string),
-                );
+                applyServerErrors(errors);
             },
         });
     };
@@ -177,7 +227,6 @@ export default function UsersIndex({ users, roleOptions }: Props) {
         router.delete(`/utilizadores/${confirmDelete.id}`, {
             onSuccess: () => {
                 setConfirmDelete(null);
-                toast.success('Utilizador eliminado com sucesso!');
             },
             onError: () => toast.error('Erro ao eliminar utilizador.'),
         });
@@ -347,7 +396,7 @@ export default function UsersIndex({ users, roleOptions }: Props) {
                                 onValueChange={(value) =>
                                     form.setValue(
                                         'role',
-                                        value as 'admin' | 'custom',
+                                        value as 'admin' | 'custom' | 'municipe',
                                     )
                                 }
                             >
@@ -364,7 +413,14 @@ export default function UsersIndex({ users, roleOptions }: Props) {
                                     )}
                                 </SelectContent>
                             </Select>
+                            {form.formState.errors.role && (
+                                <p className="text-sm text-red-500">
+                                    {form.formState.errors.role.message}
+                                </p>
+                            )}
                         </div>
+
+                        {renderMunicipeFields()}
 
                         <DialogFooter>
                             <Button
@@ -442,7 +498,7 @@ export default function UsersIndex({ users, roleOptions }: Props) {
                                 onValueChange={(value) =>
                                     form.setValue(
                                         'role',
-                                        value as 'admin' | 'custom',
+                                        value as 'admin' | 'custom' | 'municipe',
                                     )
                                 }
                             >
@@ -459,7 +515,14 @@ export default function UsersIndex({ users, roleOptions }: Props) {
                                     )}
                                 </SelectContent>
                             </Select>
+                            {form.formState.errors.role && (
+                                <p className="text-sm text-red-500">
+                                    {form.formState.errors.role.message}
+                                </p>
+                            )}
                         </div>
+
+                        {renderMunicipeFields()}
 
                         <DialogFooter>
                             <Button

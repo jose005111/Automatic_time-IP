@@ -1,4 +1,5 @@
 import AuthLayoutTemplate from '@/layouts/auth/auth-simple-layout';
+import { FlashToaster } from '@/layouts/app-layout';
 
 export default function AuthLayout({
     children,
@@ -13,6 +14,7 @@ export default function AuthLayout({
     return (
         <AuthLayoutTemplate title={title} description={description} {...props}>
             {children}
+            <FlashToaster />
         </AuthLayoutTemplate>
     );
 }

@@ -51,26 +51,28 @@ class HandleInertiaRequests extends Middleware
     // }
 
     public function share(Request $request): array
-{
-    $user = $request->user();
+    {
+        $user = $request->user();
 
-    return [
-        ...parent::share($request),
-        'name' => config('app.name'),
-        'auth' => [
-            'user' => $user ? [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                // === ADICIONA AQUI O CAMPO QUE IDENTIFICA O TIPO DE UTILIZADOR ===
-                'role'       => $user->role ?? null,           // se tens coluna "role"
-            ] : null,
-        ],
-        'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
-        'flash' => [
-            'success' => fn () => $request->session()->get('success'),
-            'error'   => fn () => $request->session()->get('error'),
-        ],
-    ];
-}
+        return [
+            ...parent::share($request),
+            'name' => config('app.name'),
+            'auth' => [
+                'user' => $user ? [
+                    'id'                   => $user->id,
+                    'name'                 => $user->name,
+                    'email'                => $user->email,
+                    'role'                 => $user->role ?? null,
+                    'must_change_password' => (bool) $user->must_change_password,
+                    'id_municipe'          => $user->id_municipe,
+                ] : null,
+            ],
+            'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+            'flash' => [
+                'success' => fn () => $request->session()->get('success'),
+                'error'   => fn () => $request->session()->get('error'),
+                'warning' => fn () => $request->session()->get('warning'),
+            ],
+        ];
+    }
 }

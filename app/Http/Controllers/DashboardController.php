@@ -15,11 +15,12 @@ class DashboardController extends Controller
     {
         // Estatísticas principais
         $estatisticas = [
-            'totalMunicipes' => Municipe::count(),
-            'recrutamentosPendentes' => Recrutamento::where('estado', 0)->count(),
-            'recrutamentosAprovados' => Recrutamento::where('estado', 1)->count(),
-            'totalTransferencias' => Transferencia::count(),
-            'munícipesComBIValido' => Municipe::whereNotNull('bi_numero')
+            'totalMunicipes'          => Municipe::count(),
+            'recrutamentosPendentes'  => Recrutamento::where('estado', 0)->count(),
+            'recrutamentosAprovados'  => Recrutamento::where('estado', 1)->count(),
+            'totalTransferencias'     => Transferencia::count(),
+            'transferenciasPendentes' => Transferencia::where('estado', 0)->count(),
+            'munícipesComBIValido'    => Municipe::whereNotNull('bi_numero')
                 ->where('bi_data_validade', '>=', now())
                 ->count(),
         ];

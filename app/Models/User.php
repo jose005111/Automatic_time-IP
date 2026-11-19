@@ -4,6 +4,8 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
@@ -23,31 +25,40 @@ class User extends Authenticatable
         'email',
         'password',
         'role',
+        'id_municipe',
+        'must_change_password',
     ];
 
-    // App/Models/User.php
+    public function isAdmin(): bool
+    {
+        return $this->role === 'admin';
+    }
 
-public function isAdmin(): bool
-{
-    return $this->role === 'admin';
-}
+    public function isCustom(): bool
+    {
+        return $this->role === 'custom';
+    }
 
-public function isCustom(): bool
-{
-    return $this->role === 'custom';
-}
+    public function isMunicipe(): bool
+    {
+        return $this->role === 'municipe';
+    }
 
-// Scopes úteis
-public function scopeAdmins($query)
-{
-    return $query->where('role', 'admin');
-}
+    // Scopes úteis
+    public function scopeAdmins($query)
+    {
+        return $query->where('role', 'admin');
+    }
 
-public function scopeCustoms($query)
-{
-    return $query->where('role', 'custom');
-}
+    public function scopeCustoms($query)
+    {
+        return $query->where('role', 'custom');
+    }
 
+    public function municipe(): BelongsTo
+    {
+        return $this->belongsTo(Municipe::class, 'id_municipe');
+    }
     /**
      * The attributes that should be hidden for serialization.
      *

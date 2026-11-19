@@ -2,7 +2,7 @@ import React from 'react';
 import { pdf } from '@react-pdf/renderer';
 import RelatorioEstatisticasPDF, {
     type RelatorioEstatisticasData,
-} from './RelatorioEstatisticasPDF';
+} from './Relatorioestatisticaspdf';
 
 interface GenerateOptions {
     onSuccess?: () => void;

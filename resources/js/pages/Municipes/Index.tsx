@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Head, router } from '@inertiajs/react';
-import { useForm } from 'react-hook-form';
+import { useForm, type UseFormReturn } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { format } from 'date-fns';
+import { toast } from 'react-hot-toast';
 
 import AppLayout from '@/layouts/app-layout';
 import { Button } from '@/components/ui/button';
@@ -89,6 +90,7 @@ import {
     UserX,
     Download,
     FileDown,
+    Mail,
 } from 'lucide-react';
 import { type BreadcrumbItem } from '@/types';
 import generateFichaMunicipePDF from './../../lib/pdf/generateFichaMunicipePDF';
@@ -190,6 +192,11 @@ interface Municipe {
     dados_complementares?: DadosComplementar;
     endereco?: Endereco;
     recrutamentos?: Recrutamento[];
+    email?: string;
+    foto_url?: string;
+    foto?: string;
+    user?: { id: number; email: string };
+    usuarios?: { id: number; id_municipe: number; email: string }[];
 }
 interface Stats {
     total: number;
@@ -220,19 +227,26 @@ interface Props {
 // ─── SCHEMAS ──────────────────────────────────────────────────────────────────
 
 const municipeSchema = z.object({
-    nome_completo: z.string().min(3, 'Mínimo 3 caracteres'),
-    data_nascimento: z.string().min(1, 'Obrigatório'),
-    sexo: z.enum(['M', 'F']),
+    nome_completo: z
+        .string()
+        .min(3, 'Informe o nome completo (mínimo 3 caracteres).'),
+    data_nascimento: z.string().min(1, 'Informe a data de nascimento.'),
+    sexo: z.enum(['M', 'F'], { error: 'Selecione o sexo.' }),
     estado_civil: z.string().optional(),
     naturalidade: z.string().optional(),
-    id_municipio_naturalidade: z.coerce.number().optional(),
+    id_municipio_naturalidade: z.number().optional(),
     bi_numero: z.string().optional(),
     bi_data_emissao: z.string().optional(),
     bi_data_validade: z.string().optional(),
     telefone: z.string().optional(),
     celular: z.string().optional(),
-    id_pai: z.coerce.number().optional(),
-    id_mae: z.coerce.number().optional(),
+    id_pai: z.number().optional(),
+    id_mae: z.number().optional(),
+    email: z
+        .string()
+        .email('Informe um email válido.')
+        .optional()
+        .or(z.literal('')),
 });
 
 const biograficoSchema = z.object({
@@ -241,31 +255,31 @@ const biograficoSchema = z.object({
     registro_civil: z.string().optional(),
     registro_numero: z.string().optional(),
     cedula_numero: z.string().optional(),
-    numero_filhos: z.coerce.number().min(0).optional(),
-    vencimento: z.coerce.number().min(0).optional(),
+    numero_filhos: z.number().min(0).optional(),
+    vencimento: z.string().min(0).optional(),
     ramo_actividade: z.string().optional(),
     ramo: z.string().optional(),
-    ano_incorporacao: z.coerce
+    ano_incorporacao: z
         .number()
         .min(1900)
         .max(new Date().getFullYear() + 1)
         .optional(),
-    ano_abandono: z.coerce
+    ano_abandono: z
         .number()
         .min(1900)
         .max(new Date().getFullYear() + 1)
         .optional(),
-    ano_servico: z.coerce.number().min(0).optional(),
+    ano_servico: z.number().min(0).optional(),
     modo_vida: z.string().optional(),
 });
 
 const complementarSchema = z.object({
     caixa_postal: z.string().optional(),
     nif: z.string().optional(),
-    encargo_familiar: z.coerce.number().min(0).optional(),
+    encargo_familiar: z.number().min(0).optional(),
     habilitacao_literaria: z.string().optional(),
     profissao: z.string().optional(),
-    numero_irmaos: z.coerce.number().min(0).optional(),
+    numero_irmaos: z.number().min(0).optional(),
     entidade_emissora_bi: z.string().optional(),
     numero_carta_conducao: z.string().optional(),
     data_emissao_carta: z.string().optional(),
@@ -277,36 +291,59 @@ const enderecoSchema = z.object({
     morada: z.string().optional(),
     localidade: z.string().optional(),
     comuna: z.string().optional(),
-    id_provincia: z.coerce.number().optional(),
-    id_municipio: z.coerce.number().optional(),
+    id_provincia: z.number().optional(),
+    id_municipio: z.number().optional(),
 });
 
 const recrutamentoSchema = z.object({
-    data_recruta: z.string().min(1, 'Obrigatório'),
-    estado: z.coerce.number().min(0).max(2),
+    data_recruta: z.string().min(1, 'Informe a data de recruta.'),
+    estado: z.number().min(0).max(2),
     observacoes: z.string().optional(),
 });
 
 const transferenciaSchema = z.object({
-    data_solicitacao: z.string().min(1, 'Obrigatório'),
-    id_municipio_destino: z.coerce.number().optional(),
+    data_solicitacao: z.string().min(1, 'Informe a data da solicitação.'),
+    id_municipio_destino: z.number().optional(),
     local_destino: z.string().optional(),
-    estado: z.coerce.number().min(0).max(2),
+    estado: z.number().min(0).max(2),
 });
 
 const progenitorSchema = z.object({
-    nome_completo: z.string().min(3, 'Mínimo 3 caracteres'),
+    nome_completo: z
+        .string()
+        .min(3, 'Informe o nome completo (mínimo 3 caracteres).'),
     data_nascimento: z.string().optional(),
     naturalidade: z.string().optional(),
     profissao: z.string().optional(),
-    sexo: z.enum(['M', 'F']).optional(),
+    sexo: z.enum(['M', 'F'], { error: 'Selecione o sexo.' }).optional(),
 });
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
+const toDateInputValue = (value?: string | null): string => {
+    if (!value) return '';
+    if (/^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime())
+        ? ''
+        : `${parsed.getFullYear().toString().padStart(4, '0')}-${(parsed.getMonth() + 1).toString().padStart(2, '0')}-${parsed.getDate().toString().padStart(2, '0')}`;
+};
+
+const toLocalDate = (value?: string | null): Date | null => {
+    if (!value) return null;
+    const dateOnly = toDateInputValue(value);
+    if (dateOnly) {
+        const [ano, mes, dia] = dateOnly.split('-').map(Number);
+        return new Date(ano, mes - 1, dia, 12);
+    }
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
 const calcularIdade = (dataNascimento: string) => {
     const hoje = new Date();
-    const nasc = new Date(dataNascimento);
+    const nasc = toLocalDate(dataNascimento);
+    if (!nasc) return 0;
     let idade = hoje.getFullYear() - nasc.getFullYear();
     if (
         hoje.getMonth() - nasc.getMonth() < 0 ||
@@ -316,8 +353,10 @@ const calcularIdade = (dataNascimento: string) => {
     return idade;
 };
 
-const formatDate = (d?: string) =>
-    d ? format(new Date(d), 'dd/MM/yyyy') : '—';
+const formatDate = (d?: string) => {
+    const parsed = toLocalDate(d);
+    return parsed ? format(parsed, 'dd/MM/yyyy') : '—';
+};
 
 /** Verifica se um munícipe tem recrutamento aprovado (bloqueia novo recrutamento) */
 const temRecrutamentoAprovado = (m: Municipe) =>
@@ -385,6 +424,74 @@ const FieldGrid = ({ children }: { children: React.ReactNode }) => (
         {children}
     </div>
 );
+
+const ROTULOS_ERRO: Record<string, string> = {
+    nome_completo: 'Nome completo',
+    data_nascimento: 'Data de nascimento',
+    sexo: 'Sexo',
+    estado_civil: 'Estado civil',
+    naturalidade: 'Naturalidade',
+    id_municipio_naturalidade: 'Município de naturalidade',
+    bi_numero: 'Número do BI',
+    bi_data_emissao: 'Emissão do BI',
+    bi_data_validade: 'Validade do BI',
+    telefone: 'Telefone',
+    celular: 'Celular',
+    email: 'Email de acesso',
+    id_pai: 'Pai',
+    id_mae: 'Mãe',
+    nip: 'NIP',
+    assento_numero: 'Assento nº',
+    registro_civil: 'Registo civil',
+    registro_numero: 'Nº de registo',
+    cedula_numero: 'Cédula nº',
+    numero_filhos: 'Nº de filhos',
+    vencimento: 'Vencimento',
+    ramo_actividade: 'Ramo de actividade',
+    ramo: 'Ramo',
+    ano_incorporacao: 'Ano de incorporação',
+    ano_abandono: 'Ano de abandono',
+    ano_servico: 'Ano de serviço',
+    modo_vida: 'Modo de vida',
+    caixa_postal: 'Caixa postal',
+    nif: 'NIF',
+    encargo_familiar: 'Encargo familiar',
+    habilitacao_literaria: 'Habilitação literária',
+    profissao: 'Profissão',
+    numero_irmaos: 'Nº de irmãos',
+    entidade_emissora_bi: 'Entidade emissora do BI',
+    numero_carta_conducao: 'Nº da carta de condução',
+    data_emissao_carta: 'Emissão da carta',
+    data_validade_carta: 'Validade da carta',
+    atributo: 'Atributo',
+    morada: 'Morada',
+    localidade: 'Localidade',
+    comuna: 'Comuna',
+    id_provincia: 'Província',
+    id_municipio: 'Município',
+    data_recruta: 'Data de recruta',
+    observacoes: 'Observações',
+    estado: 'Estado',
+    data_solicitacao: 'Data da solicitação',
+    id_municipio_destino: 'Município de destino',
+    local_destino: 'Local de destino',
+    foto: 'Fotografia',
+};
+
+const ServerErrorBanner = ({ mensagens }: { mensagens: string[] }) =>
+    mensagens.length === 0 ? null : (
+        <div
+            role="alert"
+            className="rounded-md border border-destructive bg-destructive/10 p-3 text-sm text-destructive"
+        >
+            <p className="font-semibold">Não foi possível guardar:</p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                {mensagens.map((mensagem, indice) => (
+                    <li key={indice}>{mensagem}</li>
+                ))}
+            </ul>
+        </div>
+    );
 
 const SubmitBtn = ({
     label,
@@ -625,12 +732,18 @@ export default function MunicipesIndex({
         | 'progenitor'
         | null
     >(null);
+    // Guarda o modal que estava aberto antes de abrir o modal de progenitor,
+    // para poder restaurá-lo quando o progenitor fechar.
+    const [previousModal, setPreviousModal] = useState<
+        'create' | 'edit' | null
+    >(null);
     const [selected, setSelected] = useState<Municipe | null>(null);
     const [selectedRecrutamento, setSelectedRecrutamento] =
         useState<Recrutamento | null>(null);
     const [deleteTarget, setDeleteTarget] = useState<Municipe | null>(null);
     const [activeTab, setActiveTab] = useState('pessoal');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [serverErrors, setServerErrors] = useState<string[]>([]);
     const [progenitorRole, setProgenitorRole] = useState<'pai' | 'mae'>('pai');
 
     // Lista local de progenitores (actualizada após cadastrar novo)
@@ -652,37 +765,109 @@ export default function MunicipesIndex({
     );
 
     // ─── forms
-    const form = useForm<z.infer<typeof municipeSchema>>({
-        resolver: zodResolver(municipeSchema),
+    type MunicipeFormType = z.infer<typeof municipeSchema>;
+    type BiograficoFormType = z.infer<typeof biograficoSchema>;
+    type ComplementarFormType = z.infer<typeof complementarSchema>;
+    type EnderecoFormType = z.infer<typeof enderecoSchema>;
+    type RecrutamentoFormType = z.infer<typeof recrutamentoSchema>;
+    type TransferenciaFormType = z.infer<typeof transferenciaSchema>;
+    type ProgenitorFormType = z.infer<typeof progenitorSchema>;
+
+    const form = useForm<MunicipeFormType, unknown, MunicipeFormType>({
+        resolver: zodResolver(municipeSchema) as any,
         defaultValues: { sexo: 'M' },
     });
-    const biograficoForm = useForm<z.infer<typeof biograficoSchema>>({
-        resolver: zodResolver(biograficoSchema),
+    const biograficoForm = useForm<
+        BiograficoFormType,
+        unknown,
+        BiograficoFormType
+    >({
+        resolver: zodResolver(biograficoSchema) as any,
     });
-    const complementarForm = useForm<z.infer<typeof complementarSchema>>({
-        resolver: zodResolver(complementarSchema),
+    const complementarForm = useForm<
+        ComplementarFormType,
+        unknown,
+        ComplementarFormType
+    >({
+        resolver: zodResolver(complementarSchema) as any,
     });
-    const enderecoForm = useForm<z.infer<typeof enderecoSchema>>({
-        resolver: zodResolver(enderecoSchema),
+    const enderecoForm = useForm<EnderecoFormType, unknown, EnderecoFormType>({
+        resolver: zodResolver(enderecoSchema) as any,
     });
-    const recrutamentoForm = useForm<z.infer<typeof recrutamentoSchema>>({
-        resolver: zodResolver(recrutamentoSchema),
+    const recrutamentoForm = useForm<
+        RecrutamentoFormType,
+        unknown,
+        RecrutamentoFormType
+    >({
+        resolver: zodResolver(recrutamentoSchema) as any,
         defaultValues: {
             estado: 0,
             data_recruta: new Date().toISOString().split('T')[0],
         },
     });
-    const transferenciaForm = useForm<z.infer<typeof transferenciaSchema>>({
-        resolver: zodResolver(transferenciaSchema),
+    const transferenciaForm = useForm<
+        TransferenciaFormType,
+        unknown,
+        TransferenciaFormType
+    >({
+        resolver: zodResolver(transferenciaSchema) as any,
         defaultValues: {
             estado: 0,
             data_solicitacao: new Date().toISOString().split('T')[0],
         },
     });
-    const progenitorForm = useForm<z.infer<typeof progenitorSchema>>({
-        resolver: zodResolver(progenitorSchema),
+    const progenitorForm = useForm<
+        ProgenitorFormType,
+        unknown,
+        ProgenitorFormType
+    >({
+        resolver: zodResolver(progenitorSchema) as any,
         defaultValues: { sexo: 'M' },
     });
+
+    const limparErros = () => {
+        setServerErrors([]);
+        form.clearErrors();
+        biograficoForm.clearErrors();
+        complementarForm.clearErrors();
+        enderecoForm.clearErrors();
+        recrutamentoForm.clearErrors();
+        transferenciaForm.clearErrors();
+        progenitorForm.clearErrors();
+    };
+
+    const aplicarErrosServidor = (
+        errors: Record<string, string | string[]>,
+        f: UseFormReturn<any>,
+    ) => {
+        setIsSubmitting(false);
+        limparErros();
+        const mensagens: string[] = [];
+
+        Object.entries(errors).forEach(([campo, valor]) => {
+            const mensagem = Array.isArray(valor)
+                ? valor.join(' ')
+                : String(valor);
+            const rotulo = ROTULOS_ERRO[campo] ?? campo;
+            mensagens.push(`${rotulo}: ${mensagem}`);
+
+            if (campo in f.getValues()) {
+                f.setError(campo as any, {
+                    type: 'server',
+                    message: mensagem,
+                });
+            }
+        });
+
+        setServerErrors(mensagens);
+        if (mensagens.length > 0) {
+            toast.error('Não foi possível guardar. Corrija os erros indicados.');
+        }
+    };
+
+    useEffect(() => {
+        limparErros();
+    }, [modal]);
 
     const watchedProvincia = enderecoForm.watch('id_provincia');
     const municipiosFiltrados = watchedProvincia
@@ -715,6 +900,21 @@ export default function MunicipesIndex({
         routeFn();
     };
 
+    const normalizarDatasMunicipe = (v: MunicipeFormType): MunicipeFormType => ({
+        ...v,
+        data_nascimento: toDateInputValue(v.data_nascimento),
+        bi_data_emissao: toDateInputValue(v.bi_data_emissao),
+        bi_data_validade: toDateInputValue(v.bi_data_validade),
+    });
+
+    const normalizarDatasComplementar = (
+        v: ComplementarFormType,
+    ): ComplementarFormType => ({
+        ...v,
+        data_emissao_carta: toDateInputValue(v.data_emissao_carta),
+        data_validade_carta: toDateInputValue(v.data_validade_carta),
+    });
+
     // ── abrir modais
     const openCreate = () => {
         form.reset({ sexo: 'M' });
@@ -725,18 +925,19 @@ export default function MunicipesIndex({
         setSelected(m);
         form.reset({
             nome_completo: m.nome_completo,
-            data_nascimento: m.data_nascimento,
+            data_nascimento: toDateInputValue(m.data_nascimento),
             sexo: m.sexo as 'M' | 'F',
             estado_civil: m.estado_civil || '',
             naturalidade: m.naturalidade || '',
-            id_municipio_naturalidade: m.id_municipio_naturalidade,
+            id_municipio_naturalidade: m.id_municipio_naturalidade ?? undefined,
             bi_numero: m.bi_numero || '',
-            bi_data_emissao: m.bi_data_emissao || '',
-            bi_data_validade: m.bi_data_validade || '',
+            bi_data_emissao: toDateInputValue(m.bi_data_emissao),
+            bi_data_validade: toDateInputValue(m.bi_data_validade),
             telefone: m.telefone || '',
             celular: m.celular || '',
-            id_pai: m.pai?.id,
-            id_mae: m.mae?.id,
+            id_pai: m.id_pai ?? m.pai?.id,
+            id_mae: m.id_mae ?? m.mae?.id,
+            email: m.usuarios?.[0]?.email ?? m.user?.email ?? '',
         });
         setModal('edit');
     };
@@ -747,13 +948,44 @@ export default function MunicipesIndex({
         setModal('view');
     };
     const openBiografico = (m: Municipe) => {
+        const b = m.dados_biograficos;
         setSelected(m);
-        biograficoForm.reset(m.dados_biograficos || {});
+        biograficoForm.reset({
+            nip: b?.nip ?? '',
+            assento_numero: b?.assento_numero ?? '',
+            registro_civil: b?.registro_civil ?? '',
+            registro_numero: b?.registro_numero ?? '',
+            cedula_numero: b?.cedula_numero ?? '',
+            numero_filhos: b?.numero_filhos ?? undefined,
+            vencimento:
+                b?.vencimento !== null && b?.vencimento !== undefined
+                    ? String(b.vencimento)
+                    : undefined,
+            ramo_actividade: b?.ramo_actividade ?? '',
+            ramo: b?.ramo ?? '',
+            ano_incorporacao: b?.ano_incorporacao ?? undefined,
+            ano_abandono: b?.ano_abandono ?? undefined,
+            ano_servico: b?.ano_servico ?? undefined,
+            modo_vida: b?.modo_vida ?? '',
+        });
         setModal('biografico');
     };
     const openComplementar = (m: Municipe) => {
+        const c = m.dados_complementares;
         setSelected(m);
-        complementarForm.reset(m.dados_complementares || {});
+        complementarForm.reset({
+            caixa_postal: c?.caixa_postal ?? '',
+            nif: c?.nif ?? '',
+            encargo_familiar: c?.encargo_familiar ?? undefined,
+            habilitacao_literaria: c?.habilitacao_literaria ?? '',
+            profissao: c?.profissao ?? '',
+            numero_irmaos: c?.numero_irmaos ?? undefined,
+            entidade_emissora_bi: c?.entidade_emissora_bi ?? '',
+            numero_carta_conducao: c?.numero_carta_conducao ?? '',
+            data_emissao_carta: toDateInputValue(c?.data_emissao_carta),
+            data_validade_carta: toDateInputValue(c?.data_validade_carta),
+            atributo: c?.atributo ?? '',
+        });
         setModal('complementar');
     };
 
@@ -763,8 +995,8 @@ export default function MunicipesIndex({
             morada: m.endereco?.morada || '',
             localidade: m.endereco?.localidade || '',
             comuna: m.endereco?.comuna || '',
-            id_provincia: m.endereco?.id_provincia,
-            id_municipio: m.endereco?.id_municipio,
+            id_provincia: m.endereco?.id_provincia ?? undefined,
+            id_municipio: m.endereco?.id_municipio ?? undefined,
         });
         setModal('endereco');
     };
@@ -790,6 +1022,10 @@ export default function MunicipesIndex({
     };
 
     const openProgenitor = (role: 'pai' | 'mae') => {
+        // Guarda qual modal estava aberto para restaurar depois
+        if (modal === 'create' || modal === 'edit') {
+            setPreviousModal(modal);
+        }
         setProgenitorRole(role);
         progenitorForm.reset({ sexo: role === 'pai' ? 'M' : 'F' });
         setModal('progenitor');
@@ -800,24 +1036,40 @@ export default function MunicipesIndex({
         setSelected(null);
         setSelectedRecrutamento(null);
         setIsSubmitting(false);
+        setPreviousModal(null);
+    };
+
+    // Fecha apenas o modal de progenitor e restaura o modal anterior (create/edit)
+    const closeProgenitorModal = () => {
+        setIsSubmitting(false);
+        if (previousModal) {
+            setModal(previousModal);
+            setPreviousModal(null);
+        } else {
+            closeModal();
+        }
     };
 
     // ── submits
     const onCreateSubmit = (v: z.infer<typeof municipeSchema>) =>
         submit(() =>
-            router.post('/municipes', v, {
+            router.post('/municipes', normalizarDatasMunicipe(v), {
                 onSuccess: closeModal,
-                onError: () => setIsSubmitting(false),
+                onError: (errors) => aplicarErrosServidor(errors, form),
             }),
         );
 
     const onEditSubmit = (v: z.infer<typeof municipeSchema>) => {
         if (!selected) return;
         submit(() =>
-            router.put(`/municipes/${selected.id}`, v, {
-                onSuccess: closeModal,
-                onError: () => setIsSubmitting(false),
-            }),
+            router.put(
+                `/municipes/${selected.id}`,
+                normalizarDatasMunicipe(v),
+                {
+                    onSuccess: closeModal,
+                    onError: (errors) => aplicarErrosServidor(errors, form),
+                },
+            ),
         );
     };
 
@@ -826,7 +1078,8 @@ export default function MunicipesIndex({
         submit(() =>
             router.post(`/municipes/${selected.id}/biografico`, v, {
                 onSuccess: closeModal,
-                onError: () => setIsSubmitting(false),
+                onError: (errors) =>
+                    aplicarErrosServidor(errors, biograficoForm),
             }),
         );
     };
@@ -834,10 +1087,15 @@ export default function MunicipesIndex({
     const onComplementarSubmit = (v: z.infer<typeof complementarSchema>) => {
         if (!selected) return;
         submit(() =>
-            router.post(`/municipes/${selected.id}/complementar`, v, {
-                onSuccess: closeModal,
-                onError: () => setIsSubmitting(false),
-            }),
+            router.post(
+                `/municipes/${selected.id}/complementar`,
+                normalizarDatasComplementar(v),
+                {
+                    onSuccess: closeModal,
+                    onError: (errors) =>
+                        aplicarErrosServidor(errors, complementarForm),
+                },
+            ),
         );
     };
 
@@ -846,7 +1104,8 @@ export default function MunicipesIndex({
         submit(() =>
             router.post(`/municipes/${selected.id}/endereco`, v, {
                 onSuccess: closeModal,
-                onError: () => setIsSubmitting(false),
+                onError: (errors) =>
+                    aplicarErrosServidor(errors, enderecoForm),
             }),
         );
     };
@@ -856,7 +1115,8 @@ export default function MunicipesIndex({
         submit(() =>
             router.post(`/municipes/${selected.id}/recrutamento`, v, {
                 onSuccess: closeModal,
-                onError: () => setIsSubmitting(false),
+                onError: (errors) =>
+                    aplicarErrosServidor(errors, recrutamentoForm),
             }),
         );
     };
@@ -869,7 +1129,8 @@ export default function MunicipesIndex({
                 v,
                 {
                     onSuccess: closeModal,
-                    onError: () => setIsSubmitting(false),
+                    onError: (errors) =>
+                        aplicarErrosServidor(errors, transferenciaForm),
                 },
             ),
         );
@@ -881,10 +1142,11 @@ export default function MunicipesIndex({
     const onProgenitorSubmit = async (v: z.infer<typeof progenitorSchema>) => {
         setIsSubmitting(true);
         try {
-            const csrfMeta = document.querySelector<HTMLMetaElement>(
-                'meta[name="csrf-token"]',
-            );
-            const csrfToken = csrfMeta?.content || '';
+            // Lê o token CSRF da meta tag injectada pelo Blade
+            const csrfToken =
+                document.querySelector<HTMLMetaElement>(
+                    'meta[name="csrf-token"]',
+                )?.content ?? '';
 
             const res = await fetch('/progenitores', {
                 method: 'POST',
@@ -897,7 +1159,16 @@ export default function MunicipesIndex({
                 body: JSON.stringify(v),
             });
 
-            if (!res.ok) throw new Error('Erro ao cadastrar progenitor');
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                aplicarErrosServidor(
+                    err.errors ?? {
+                        form: err.message ?? 'Erro ao cadastrar progenitor.',
+                    },
+                    progenitorForm,
+                );
+                return;
+            }
 
             const novo: Progenitor = await res.json();
 
@@ -908,19 +1179,52 @@ export default function MunicipesIndex({
                 ),
             );
 
-            // Auto-selecciona no formulário pai/mãe
-            if (progenitorRole === 'pai') form.setValue('id_pai', novo.id);
-            else form.setValue('id_mae', novo.id);
+            // Auto-selecciona no formulário pai/mãe com base no sexo preenchido
+            // M → pai, F → mãe (independentemente de como o modal foi aberto)
+            if (v.sexo === 'F') {
+                form.setValue('id_mae', novo.id);
+            } else {
+                // M ou não preenchido → pai
+                form.setValue('id_pai', novo.id);
+            }
 
-            closeModal();
+            const papel = v.sexo === 'F' ? 'Mãe' : 'Pai';
+            toast.success(
+                `${papel} "${novo.nome_completo}" cadastrado e seleccionado!`,
+                {
+                    duration: 3500,
+                    style: {
+                        borderRadius: '10px',
+                        background: '#f0fdf4',
+                        color: '#14532d',
+                        border: '1px solid #bbf7d0',
+                        fontWeight: '500',
+                        fontSize: '14px',
+                        padding: '12px 16px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                    },
+                    iconTheme: { primary: '#22c55e', secondary: '#f0fdf4' },
+                },
+            );
+
+            // Fecha o modal de progenitor e volta ao modal anterior (create/edit)
+            closeProgenitorModal();
         } catch {
-            // Fallback: redireciona via Inertia
-            router.post('/progenitores', v, {
-                onSuccess: closeModal,
-                onError: () => setIsSubmitting(false),
-            });
-        } finally {
             setIsSubmitting(false);
+            toast.error('Erro ao cadastrar progenitor. Tente novamente.', {
+                duration: 5000,
+                style: {
+                    borderRadius: '10px',
+                    background: '#fef2f2',
+                    color: '#7f1d1d',
+                    border: '1px solid #fecaca',
+                    fontWeight: '500',
+                    fontSize: '14px',
+                    padding: '12px 16px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                },
+                iconTheme: { primary: '#ef4444', secondary: '#fef2f2' },
+            });
         }
     };
 
@@ -1042,7 +1346,7 @@ export default function MunicipesIndex({
                         <FormItem>
                             <FormLabel>Município de Naturalidade</FormLabel>
                             <Select
-                                onValueChange={field.onChange}
+                                onValueChange={(v) => field.onChange(Number(v))}
                                 value={field.value?.toString()}
                             >
                                 <FormControl>
@@ -1131,6 +1435,29 @@ export default function MunicipesIndex({
                             <FormControl>
                                 <Input placeholder="Ex: 923456789" {...field} />
                             </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                    )}
+                />
+                <FormField
+                    control={f.control}
+                    name="email"
+                    render={({ field }) => (
+                        <FormItem>
+                            <FormLabel className="flex items-center gap-1">
+                                <Mail className="h-3 w-3 text-muted-foreground" />
+                                Email de Acesso
+                            </FormLabel>
+                            <FormControl>
+                                <Input
+                                    type="email"
+                                    placeholder="exemplo@email.com"
+                                    {...field}
+                                />
+                            </FormControl>
+                            <p className="text-xs text-muted-foreground">
+                                Cria uma conta para o munícipe aceder ao sistema
+                            </p>
                             <FormMessage />
                         </FormItem>
                     )}
@@ -1644,9 +1971,15 @@ export default function MunicipesIndex({
             {/* ══════════════════════════════════════════ MODAL: CRIAR ══════════════════════════════════════════ */}
             <Dialog
                 open={modal === 'create'}
-                onOpenChange={(o) => !o && closeModal()}
+                onOpenChange={() => {
+                    /* bloqueado — só fecha via botão Cancelar */
+                }}
             >
-                <DialogContent className="max-h-[92vh] min-w-6xl overflow-y-auto">
+                <DialogContent
+                    className="max-h-[92vh] min-w-6xl overflow-y-auto"
+                    onInteractOutside={(e) => e.preventDefault()}
+                    onEscapeKeyDown={(e) => e.preventDefault()}
+                >
                     <DialogHeader>
                         <DialogTitle className="text-xl">
                             Cadastrar Novo Munícipe
@@ -1662,6 +1995,7 @@ export default function MunicipesIndex({
                             onSubmit={form.handleSubmit(onCreateSubmit)}
                             className="space-y-6"
                         >
+                            <ServerErrorBanner mensagens={serverErrors} />
                             <MunicipeFormFields f={form} />
                             <DialogFooter>
                                 <Button
@@ -1684,9 +2018,15 @@ export default function MunicipesIndex({
             {/* ══════════════════════════════════════════ MODAL: EDITAR ══════════════════════════════════════════ */}
             <Dialog
                 open={modal === 'edit'}
-                onOpenChange={(o) => !o && closeModal()}
+                onOpenChange={(o) => {
+                    if (!o) closeModal();
+                }}
             >
-                <DialogContent className="max-h-[92vh] min-w-6xl overflow-y-auto">
+                <DialogContent
+                    className="max-h-[92vh] min-w-6xl overflow-y-auto"
+                    onInteractOutside={(e) => e.preventDefault()}
+                    onEscapeKeyDown={(e) => e.preventDefault()}
+                >
                     <DialogHeader>
                         <DialogTitle className="text-xl">
                             Editar Munícipe
@@ -1704,6 +2044,7 @@ export default function MunicipesIndex({
                             onSubmit={form.handleSubmit(onEditSubmit)}
                             className="space-y-6"
                         >
+                            <ServerErrorBanner mensagens={serverErrors} />
                             <MunicipeFormFields f={form} />
                             <DialogFooter>
                                 <Button
@@ -2449,6 +2790,7 @@ export default function MunicipesIndex({
                             )}
                             className="space-y-4"
                         >
+                            <ServerErrorBanner mensagens={serverErrors} />
                             <FieldGrid>
                                 {[
                                     { name: 'nip', label: 'NIP', type: 'text' },
@@ -2480,7 +2822,7 @@ export default function MunicipesIndex({
                                     {
                                         name: 'vencimento',
                                         label: 'Vencimento (Kz)',
-                                        type: 'number',
+                                        type: 'text',
                                     },
                                     {
                                         name: 'ramo_actividade',
@@ -2524,6 +2866,23 @@ export default function MunicipesIndex({
                                                     <Input
                                                         type={type}
                                                         {...field}
+                                                        value={
+                                                            field.value ?? ''
+                                                        }
+                                                        onChange={(e) => {
+                                                            const raw =
+                                                                e.target.value;
+                                                            field.onChange(
+                                                                type ===
+                                                                    'number'
+                                                                    ? raw === ''
+                                                                        ? undefined
+                                                                        : Number(
+                                                                              raw,
+                                                                          )
+                                                                    : raw,
+                                                            );
+                                                        }}
                                                     />
                                                 </FormControl>
                                                 <FormMessage />
@@ -2570,6 +2929,7 @@ export default function MunicipesIndex({
                             )}
                             className="space-y-4"
                         >
+                            <ServerErrorBanner mensagens={serverErrors} />
                             <FieldGrid>
                                 {[
                                     {
@@ -2635,6 +2995,23 @@ export default function MunicipesIndex({
                                                     <Input
                                                         type={type}
                                                         {...field}
+                                                        value={
+                                                            field.value ?? ''
+                                                        }
+                                                        onChange={(e) => {
+                                                            const raw =
+                                                                e.target.value;
+                                                            field.onChange(
+                                                                type ===
+                                                                    'number'
+                                                                    ? raw === ''
+                                                                        ? undefined
+                                                                        : Number(
+                                                                              raw,
+                                                                          )
+                                                                    : raw,
+                                                            );
+                                                        }}
                                                     />
                                                 </FormControl>
                                                 <FormMessage />
@@ -2681,6 +3058,7 @@ export default function MunicipesIndex({
                             )}
                             className="space-y-4"
                         >
+                            <ServerErrorBanner mensagens={serverErrors} />
                             <div className="grid gap-4 sm:grid-cols-2">
                                 <FormField
                                     control={enderecoForm.control}
@@ -2735,7 +3113,7 @@ export default function MunicipesIndex({
                                             <FormLabel>Província</FormLabel>
                                             <Select
                                                 onValueChange={(v) => {
-                                                    field.onChange(v);
+                                                    field.onChange(Number(v));
                                                     enderecoForm.setValue(
                                                         'id_municipio',
                                                         undefined,
@@ -2769,7 +3147,9 @@ export default function MunicipesIndex({
                                         <FormItem>
                                             <FormLabel>Município</FormLabel>
                                             <Select
-                                                onValueChange={field.onChange}
+                                                onValueChange={(v) =>
+                                                    field.onChange(Number(v))
+                                                }
                                                 value={field.value?.toString()}
                                                 disabled={
                                                     municipiosFiltrados.length ===
@@ -2843,6 +3223,7 @@ export default function MunicipesIndex({
                             )}
                             className="space-y-4"
                         >
+                            <ServerErrorBanner mensagens={serverErrors} />
                             <FormField
                                 control={recrutamentoForm.control}
                                 name="data_recruta"
@@ -2865,7 +3246,9 @@ export default function MunicipesIndex({
                                     <FormItem>
                                         <FormLabel>Estado</FormLabel>
                                         <Select
-                                            onValueChange={field.onChange}
+                                            onValueChange={(v) =>
+                                                field.onChange(Number(v))
+                                            }
                                             value={field.value.toString()}
                                         >
                                             <FormControl>
@@ -2946,6 +3329,7 @@ export default function MunicipesIndex({
                             )}
                             className="space-y-4"
                         >
+                            <ServerErrorBanner mensagens={serverErrors} />
                             <FormField
                                 control={transferenciaForm.control}
                                 name="data_solicitacao"
@@ -2970,7 +3354,9 @@ export default function MunicipesIndex({
                                             Município de Destino
                                         </FormLabel>
                                         <Select
-                                            onValueChange={field.onChange}
+                                            onValueChange={(v) =>
+                                                field.onChange(Number(v))
+                                            }
                                             value={field.value?.toString()}
                                         >
                                             <FormControl>
@@ -3016,7 +3402,9 @@ export default function MunicipesIndex({
                                     <FormItem>
                                         <FormLabel>Estado</FormLabel>
                                         <Select
-                                            onValueChange={field.onChange}
+                                            onValueChange={(v) =>
+                                                field.onChange(Number(v))
+                                            }
                                             value={field.value.toString()}
                                         >
                                             <FormControl>
@@ -3060,13 +3448,13 @@ export default function MunicipesIndex({
             {/* ══════════════════════════════════════════ MODAL: CADASTRAR PROGENITOR ══════════════════════════════════════════ */}
             <Dialog
                 open={modal === 'progenitor'}
-                onOpenChange={(o) => !o && closeModal()}
+                onOpenChange={(o) => {
+                    if (!o) closeProgenitorModal();
+                }}
             >
                 <DialogContent className="max-w-md">
                     <DialogHeader>
-                        <DialogTitle>
-                            Cadastrar {progenitorRole === 'pai' ? 'Pai' : 'Mãe'}
-                        </DialogTitle>
+                        <DialogTitle>Cadastrar Progenitor(a)</DialogTitle>
                         <DialogDescription>
                             O progenitor será auto-seleccionado após o cadastro.
                         </DialogDescription>
@@ -3079,6 +3467,7 @@ export default function MunicipesIndex({
                             )}
                             className="space-y-4"
                         >
+                            <ServerErrorBanner mensagens={serverErrors} />
                             <FormField
                                 control={progenitorForm.control}
                                 name="nome_completo"
@@ -3170,7 +3559,7 @@ export default function MunicipesIndex({
                                 <Button
                                     type="button"
                                     variant="outline"
-                                    onClick={closeModal}
+                                    onClick={closeProgenitorModal}
                                 >
                                     Cancelar
                                 </Button>

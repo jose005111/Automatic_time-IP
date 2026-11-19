@@ -2,7 +2,7 @@ import React from 'react';
 import { pdf } from '@react-pdf/renderer';
 import CartaTransferenciaPdf, {
     type CartaTransferenciaData,
-} from './CartaTransferenciaPdf';
+} from './Cartatransferenciapdf';
 
 interface GeneratePDFOptions {
     onSuccess?: () => void;

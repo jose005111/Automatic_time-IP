@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Middleware\EnsurePasswordChanged;
+use App\Http\Middleware\EnsureUserIsAdmin;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use Illuminate\Foundation\Application;
@@ -21,13 +23,13 @@ return Application::configure(basePath: dirname(__DIR__))
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
         ]);
+
+        // Aliases de middleware para uso nas rotas
+        $middleware->alias([
+            'admin'            => EnsureUserIsAdmin::class,
+            'senha_alterada'   => EnsurePasswordChanged::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //
     })->create();
-
-// ->withMiddleware(function (Middleware $middleware) {
-//     $middleware->alias([
-//         'admin' => \App\Http\Middleware\EnsureUserIsAdmin::class,
-//     ]);
-// })

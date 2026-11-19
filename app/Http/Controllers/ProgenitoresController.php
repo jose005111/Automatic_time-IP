@@ -25,17 +25,16 @@ class ProgenitoresController extends Controller
             'profissao'       => 'nullable|string|max:100',
             'sexo'            => 'nullable|in:M,F',
         ]);
- 
+
         $progenitor = Progenitor::create($validated);
- 
+
         // Se o pedido espera JSON (chamada fetch do React), devolve o objecto
-        if ($request->expectsJson() || $request->wantsJson()) {
+        if ($request->expectsJson() || $request->wantsJson() || $request->header('X-Requested-With') === 'XMLHttpRequest') {
             return response()->json($progenitor, 201);
         }
- 
+
         return back()
-            ->with('success', 'Progenitor cadastrado com sucesso!')
-            ->with('new_progenitor', $progenitor);
+            ->with('success', 'Progenitor cadastrado com sucesso!');
     }
  
     public function update(Request $request, Progenitor $progenitor)

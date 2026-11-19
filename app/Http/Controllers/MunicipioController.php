@@ -39,10 +39,17 @@ class MunicipioController extends Controller
      */
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'nome' => 'required|string|max:150',
-            'id_provincia' => 'required|exists:provincias,id',
-        ]);
+       $validated = $request->validate([
+        'nome' => [
+            'required',
+            'string',
+            'max:150',
+            'unique:municipios,nome,NULL,id,id_provincia,' . $request->input('id_provincia'),
+        ],
+        'id_provincia' => 'required|exists:provincias,id',
+    ], [
+        'nome.unique' => 'Já existe um município com este nome nesta província.',
+    ]);
 
         // O unique(nome, id_provincia) já existe na migration
         Municipio::create($validated);
